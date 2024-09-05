@@ -1,4 +1,5 @@
 //! An implementation of the $\mathbb{G}_2$ group of BLS12-381.
+#![allow(unused_variables)]
 
 use core::{
     borrow::Borrow,
@@ -6,16 +7,22 @@ use core::{
     iter::Sum,
     ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign},
 };
+use std::convert::TryInto;
+use std::io::{Read, Write};
+use std::ops::{Deref, DerefMut};
 
 use blst::*;
+use ff::{Field, PrimeField, WithSmallOrderMulGroup};
 use group::{
     prime::{PrimeCurve, PrimeCurveAffine, PrimeGroup},
     Curve, Group, GroupEncoding, UncompressedEncoding, WnafGroup,
 };
+use halo2curves::serde::SerdeObject;
+use pasta_curves::arithmetic::{Coordinates, CurveAffine, CurveExt};
 use rand_core::RngCore;
-use subtle::{Choice, ConditionallySelectable, CtOption};
+use subtle::{Choice, ConditionallySelectable, ConstantTimeEq, CtOption};
 
-use crate::{fp2::Fp2, Bls12, Engine, G1Affine, Gt, PairingCurveAffine, Scalar};
+use crate::{fp::Fp, fp2::Fp2, Bls12, Engine, G1Affine, Gt, PairingCurveAffine, Scalar};
 
 /// This is an element of $\mathbb{G}_2$ represented in the affine coordinate space.
 /// It is ideal to keep elements in this representation to reduce memory usage and
@@ -544,7 +551,7 @@ impl G2Projective {
         // Sclar is 255 bits wide.
         const NBITS: usize = 255;
 
-        unsafe { blst_p2_mult(&mut out, &self.0, scalar.to_bytes_le().as_ptr(), NBITS) };
+        unsafe { blst_p2_mult(&mut out, &self.0, scalar.to_bytes().as_ptr(), NBITS) };
 
         G2Projective(out)
     }
@@ -605,7 +612,7 @@ impl G2Projective {
         let points = p2_affines::from(points);
 
         let mut scalar_bytes: Vec<u8> = Vec::with_capacity(n * 32);
-        for a in scalars.iter().map(|s| s.to_bytes_le()) {
+        for a in scalars.iter().map(|s| s.to_bytes()) {
             scalar_bytes.extend_from_slice(&a);
         }
 
@@ -817,6 +824,306 @@ impl Default for G2Compressed {
 impl fmt::Debug for G2Compressed {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> Result<(), fmt::Error> {
         self.0[..].fmt(formatter)
+    }
+}
+
+impl Add for G2Affine {
+    type Output = <Self as PrimeCurveAffine>::Curve;
+
+    fn add(self, rhs: Self) -> Self::Output {
+        G2Projective::from(self) + rhs
+    }
+}
+
+impl Sub for G2Affine {
+    type Output = <Self as PrimeCurveAffine>::Curve;
+
+    fn sub(self, rhs: G2Affine) -> Self::Output {
+        G2Projective::from(self) - rhs
+    }
+}
+
+impl ConstantTimeEq for G2Affine {
+    fn ct_eq(&self, other: &Self) -> Choice {
+        let z1 = self.is_identity();
+        let z2 = other.is_identity();
+
+        (z1 & z2) | ((!z1) & (!z2) & (self.x().ct_eq(&other.x())) & (self.y().ct_eq(&other.y())))
+    }
+}
+
+impl ConstantTimeEq for G2Projective {
+    fn ct_eq(&self, other: &Self) -> Choice {
+        // Is (x, y, z) equal to (x', y, z') when converted to affine?
+        // => (x/z , y/z) equal to (x'/z' , y'/z')
+        // => (xz' == x'z) & (yz' == y'z)
+
+        let x1 = self.x() * other.z();
+        let y1 = self.y() * other.z();
+
+        let x2 = other.x() * self.z();
+        let y2 = other.y() * self.z();
+
+        let self_is_zero = self.is_identity();
+        let other_is_zero = other.is_identity();
+
+        (self_is_zero & other_is_zero) // Both point at infinity
+            | ((!self_is_zero) & (!other_is_zero) & x1.ct_eq(&x2) & y1.ct_eq(&y2))
+        // Neither point at infinity, coordinates are the same
+    }
+}
+
+// Wrapper needed, because we don't have Default implemented for [0u8; 48]
+#[derive(Copy, Clone)]
+pub struct Fp2Repr([u8; 96]);
+
+impl Default for Fp2Repr {
+    fn default() -> Self {
+        Self([0u8; 96])
+    }
+}
+
+impl Deref for Fp2Repr {
+    type Target = [u8; 96];
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl AsRef<[u8]> for Fp2Repr {
+    fn as_ref(&self) -> &[u8] {
+        &self.0
+    }
+}
+
+impl AsMut<[u8]> for Fp2Repr {
+    fn as_mut(&mut self) -> &mut [u8] {
+        self.0.as_mut_slice()
+    }
+}
+
+impl DerefMut for Fp2Repr {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
+impl PrimeField for Fp2 {
+    type Repr = Fp2Repr;
+    const MODULUS: &'static str = <Fp as PrimeField>::MODULUS;
+    const MULTIPLICATIVE_GENERATOR: Self = Fp2::new(Fp::MULTIPLICATIVE_GENERATOR, Fp::ZERO);
+    const NUM_BITS: u32 = Fp::NUM_BITS;
+    const CAPACITY: u32 = Fp::NUM_BITS;
+    const S: u32 = Fp::S;
+
+    // TODO: Check that we can just 0 this and forget.
+    const ROOT_OF_UNITY: Self = Fp2::ZERO;
+    const ROOT_OF_UNITY_INV: Self = Fp2::ZERO;
+    const DELTA: Self = Fp2::ZERO;
+
+    const TWO_INV: Self = Fp2::new(Fp::TWO_INV, Fp::ZERO);
+
+    fn from_repr(repr: Self::Repr) -> CtOption<Self> {
+        let c0: [u8; 48] = repr[..48].try_into().unwrap();
+        let c0: <Fp as PrimeField>::Repr = c0.into();
+        let c0 = Fp::from_repr(c0);
+
+        let c1: [u8; 48] = repr[48..].try_into().unwrap();
+        let c1: <Fp as PrimeField>::Repr = c1.into();
+        let c1 = Fp::from_repr(c1);
+
+        CtOption::new(Fp2::new(c0.unwrap(), c1.unwrap()), Choice::from(1))
+    }
+
+    fn to_repr(&self) -> Self::Repr {
+        let mut res = Self::Repr::default();
+        let c0 = self.c0().to_repr();
+        let c1 = self.c1().to_repr();
+        res[0..48].copy_from_slice(c0.as_ref());
+        res[48..48 * 2].copy_from_slice(c1.as_ref());
+        res
+    }
+
+    fn is_odd(&self) -> Choice {
+        Choice::from(self.to_repr().as_ref()[0] & 1)
+    }
+}
+
+impl WithSmallOrderMulGroup<3> for Fp2 {
+    const ZETA: Self = todo!(); // Fp2::new(Fp::ZETA.mul(Fp::ZETA), Fp::ZERO);
+}
+
+const G2_B: Fp2 = Fp2(blst_fp2 {
+    fp: [
+        blst_fp {
+            l: [4, 0, 0, 0, 0, 0],
+        },
+        blst_fp {
+            l: [4, 0, 0, 0, 0, 0],
+        },
+    ],
+});
+
+const G2_A: Fp2 = Fp2::ZERO;
+
+impl Default for G2Projective {
+    fn default() -> Self {
+        G2Projective::identity()
+    }
+}
+impl CurveExt for G2Projective {
+    type ScalarExt = Scalar;
+    type Base = Fp2;
+    type AffineExt = G2Affine;
+    const CURVE_ID: &'static str = "";
+
+    fn endo(&self) -> Self {
+        todo!()
+    }
+
+    fn jacobian_coordinates(&self) -> (Self::Base, Self::Base, Self::Base) {
+        // Homogeneous to Jacobian
+        let x = self.x() * self.z();
+        let y = self.y() * self.z().square();
+        (x, y, self.z())
+    }
+
+    fn hash_to_curve<'a>(domain_prefix: &'a str) -> Box<dyn Fn(&[u8]) -> Self + 'a> {
+        todo!()
+    }
+
+    fn is_on_curve(&self) -> Choice {
+        self.is_on_curve()
+    }
+
+    fn a() -> Self::Base {
+        G2_A
+    }
+
+    fn b() -> Self::Base {
+        G2_B
+    }
+
+    fn new_jacobian(x: Self::Base, y: Self::Base, z: Self::Base) -> CtOption<Self> {
+        // Jacobian to homogeneous
+        let z_inv = z.invert().unwrap_or(Fp2::ZERO);
+        let p_x = x * z_inv;
+        let p_y = y * z_inv.square();
+        let p = G2Projective::from_raw_unchecked(
+            p_x,
+            Fp2::conditional_select(&p_y, &Fp2::ONE, z.is_zero()),
+            z,
+        );
+        CtOption::new(p, p.is_on_curve())
+    }
+}
+
+impl CurveAffine for G2Affine {
+    type ScalarExt = Scalar;
+    type Base = Fp;
+    type CurveExt = G2Projective;
+
+    fn coordinates(&self) -> CtOption<Coordinates<Self>> {
+        todo!()
+    }
+
+    fn from_xy(x: Self::Base, y: Self::Base) -> CtOption<Self> {
+        todo!()
+    }
+
+    fn is_on_curve(&self) -> Choice {
+        todo!()
+    }
+
+    fn a() -> Self::Base {
+        todo!()
+    }
+
+    fn b() -> Self::Base {
+        todo!()
+    }
+}
+
+impl SerdeObject for G2Projective {
+    fn from_raw_bytes_unchecked(bytes: &[u8]) -> Self {
+        todo!()
+    }
+
+    fn from_raw_bytes(bytes: &[u8]) -> Option<Self> {
+        todo!()
+    }
+
+    fn to_raw_bytes(&self) -> Vec<u8> {
+        todo!()
+    }
+
+    fn read_raw_unchecked<R: Read>(reader: &mut R) -> Self {
+        todo!()
+    }
+
+    fn read_raw<R: Read>(reader: &mut R) -> std::io::Result<Self> {
+        todo!()
+    }
+
+    fn write_raw<W: Write>(&self, writer: &mut W) -> std::io::Result<()> {
+        if self.is_identity().into() {
+            writer.write_all(&[1])?;
+        } else {
+            writer.write_all(&[0])?;
+        }
+        let raw = self.to_uncompressed();
+        writer.write_all(&raw)?;
+
+        Ok(())
+    }
+}
+
+impl SerdeObject for G2Affine {
+    fn from_raw_bytes_unchecked(bytes: &[u8]) -> Self {
+        todo!()
+    }
+
+    fn from_raw_bytes(bytes: &[u8]) -> Option<Self> {
+        todo!()
+    }
+
+    fn to_raw_bytes(&self) -> Vec<u8> {
+        todo!()
+    }
+
+    fn read_raw_unchecked<R: Read>(reader: &mut R) -> Self {
+        todo!()
+    }
+
+    fn read_raw<R: Read>(reader: &mut R) -> std::io::Result<Self> {
+        let mut buf = [0u8];
+        reader.read_exact(&mut buf)?;
+        let _infinity = buf[0] == 1;
+
+        let mut buf = [0u8; UNCOMPRESSED_SIZE];
+        reader.read_exact(&mut buf)?;
+        let res = Self::from_uncompressed_unchecked(&buf);
+        if res.is_some().into() {
+            Ok(res.unwrap())
+        } else {
+            Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "not on curve",
+            ))
+        }
+    }
+
+    fn write_raw<W: Write>(&self, writer: &mut W) -> std::io::Result<()> {
+        if self.is_identity().into() {
+            writer.write_all(&[1])?;
+        } else {
+            writer.write_all(&[0])?;
+        }
+        let raw = self.to_uncompressed();
+        writer.write_all(&raw)?;
+
+        Ok(())
     }
 }
 

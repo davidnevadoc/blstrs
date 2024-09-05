@@ -103,8 +103,9 @@ impl Mul<&Scalar> for &Gt {
         // We skip the leading bit because it's always unset for Fq
         // elements.
         for bit in scalar
-            .to_bytes_be()
+            .to_bytes()
             .iter()
+            .rev()
             .flat_map(|byte| (0..8).rev().map(move |i| (byte >> i) & 1 == 1))
             .skip(1)
         {
@@ -417,16 +418,8 @@ mod tests {
     fn test_gt_bilinearity() {
         use crate::Scalar;
 
-        let a = Scalar::from_u64s_le(&[1, 2, 3, 4])
-            .unwrap()
-            .invert()
-            .unwrap()
-            .square();
-        let b = Scalar::from_u64s_le(&[5, 6, 7, 8])
-            .unwrap()
-            .invert()
-            .unwrap()
-            .square();
+        let a = Scalar::from_raw([1, 2, 3, 4]).invert().unwrap().square();
+        let b = Scalar::from_raw([5, 6, 7, 8]).invert().unwrap().square();
         let c = a * b;
 
         let g = G1Affine::from(G1Affine::generator() * a);
@@ -465,57 +458,27 @@ mod tests {
         let b1 = G2Affine::generator();
 
         let a2 = G1Affine::from(
-            G1Affine::generator()
-                * Scalar::from_u64s_le(&[1, 2, 3, 4])
-                    .unwrap()
-                    .invert()
-                    .unwrap()
-                    .square(),
+            G1Affine::generator() * Scalar::from_raw([1, 2, 3, 4]).invert().unwrap().square(),
         );
         let b2 = G2Affine::from(
-            G2Affine::generator()
-                * Scalar::from_u64s_le(&[4, 2, 2, 4])
-                    .unwrap()
-                    .invert()
-                    .unwrap()
-                    .square(),
+            G2Affine::generator() * Scalar::from_raw([4, 2, 2, 4]).invert().unwrap().square(),
         );
 
         let a3 = G1Affine::identity();
         let b3 = G2Affine::from(
-            G2Affine::generator()
-                * Scalar::from_u64s_le(&[9, 2, 2, 4])
-                    .unwrap()
-                    .invert()
-                    .unwrap()
-                    .square(),
+            G2Affine::generator() * Scalar::from_raw([9, 2, 2, 4]).invert().unwrap().square(),
         );
 
         let a4 = G1Affine::from(
-            G1Affine::generator()
-                * Scalar::from_u64s_le(&[5, 5, 5, 5])
-                    .unwrap()
-                    .invert()
-                    .unwrap()
-                    .square(),
+            G1Affine::generator() * Scalar::from_raw([5, 5, 5, 5]).invert().unwrap().square(),
         );
         let b4 = G2Affine::identity();
 
         let a5 = G1Affine::from(
-            G1Affine::generator()
-                * Scalar::from_u64s_le(&[323, 32, 3, 1])
-                    .unwrap()
-                    .invert()
-                    .unwrap()
-                    .square(),
+            G1Affine::generator() * Scalar::from_raw([323, 32, 3, 1]).invert().unwrap().square(),
         );
         let b5 = G2Affine::from(
-            G2Affine::generator()
-                * Scalar::from_u64s_le(&[4, 2, 2, 9099])
-                    .unwrap()
-                    .invert()
-                    .unwrap()
-                    .square(),
+            G2Affine::generator() * Scalar::from_raw([4, 2, 2, 9099]).invert().unwrap().square(),
         );
 
         let b1_prepared = G2Prepared::from(b1);

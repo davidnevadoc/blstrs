@@ -7,8 +7,10 @@ use core::{
     cmp, fmt,
     ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign},
 };
-use ff::Field;
+use ff::{Field, PrimeField, PrimeFieldBits, WithSmallOrderMulGroup};
 use rand_core::RngCore;
+use std::convert::TryInto;
+use std::ops::Deref;
 use subtle::{Choice, ConditionallySelectable, ConstantTimeEq, CtOption};
 
 use crate::fp2::Fp2;
@@ -678,6 +680,135 @@ impl ec_gpu::GpuField for Fp {
 
     fn modulus() -> Vec<u32> {
         crate::u64_to_u32(&MODULUS[..])
+    }
+}
+
+///////// MISSING CONSTANTS AND TRAITS ///////////////
+// Wrapper needed, because we don't have Default implemented for [0u8; 48]
+#[derive(Copy, Clone)]
+pub struct FpRepr([u8; 48]);
+
+impl From<[u8; 48]> for FpRepr {
+    fn from(bytes: [u8; 48]) -> Self {
+        Self(bytes)
+    }
+}
+
+impl Default for FpRepr {
+    fn default() -> Self {
+        Self([0u8; 48])
+    }
+}
+
+impl Deref for FpRepr {
+    type Target = [u8; 48];
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl AsRef<[u8]> for FpRepr {
+    fn as_ref(&self) -> &[u8] {
+        &self.0
+    }
+}
+
+impl AsMut<[u8]> for FpRepr {
+    fn as_mut(&mut self) -> &mut [u8] {
+        self.0.as_mut_slice()
+    }
+}
+
+/// `ZETA^3 = 1 mod r` where `ZETA^2 != 1 mod r`
+// computed with sage math:
+// R.<k>=PolynomialRing(GF(0x1a0111ea397fe69a4b1ba7b6434bacd764774b84f38512bf6730d2a0f6b0f6241eabfffeb153ffffb9feffffffffaaab))
+// L=(k^3-1).roots();L
+pub const ZETA_BASE: Fp = Fp(blst_fp {
+    l: [
+        0x30f1361b798a64e8,
+        0xf3b8ddab7ece5a2a,
+        0x16a8ca3ac61577f7,
+        0xc26a2ff874fd029b,
+        0x3636b76660701c6e,
+        0x51ba4ab241b6160,
+    ],
+});
+
+/// 2^-1
+const TWO_INV: Fp = Fp(blst_fp {
+    l: [
+        0x1804_0000_0001_5554,
+        0x8550_0005_3ab0_0001,
+        0x633c_b57c_253c_276f,
+        0x6e22_d1ec_31eb_b502,
+        0xd391_6126_f2d1_4ca2,
+        0x17fb_b857_1a00_6596,
+    ],
+});
+
+/// Computed using sage, GF(0x1a0111ea397fe69a4b1ba7b6434bacd764774b84f38512bf6730d2a0f6b0f6241eabfffeb153ffffb9feffffffffaaab).primitive_element()
+const MULTIPLICATIVE_GENERATOR: Fp = Fp(blst_fp {
+    l: [0x02, 0x00, 0x00, 0x00, 0x00, 0x00],
+});
+
+impl PrimeField for Fp {
+    type Repr = FpRepr;
+
+    fn from_repr(repr: Self::Repr) -> CtOption<Self> {
+        Fp::from_bytes_le(&repr)
+    }
+
+    fn to_repr(&self) -> Self::Repr {
+        FpRepr(self.to_bytes_le())
+    }
+
+    fn is_odd(&self) -> Choice {
+        todo!()
+    }
+
+    const MODULUS: &'static str = "0x1a0111ea397fe69a4b1ba7b6434bacd764774b84f38512bf6730d2a0f6b0f6241eabfffeb153ffffb9feffffffffaaab";
+    const NUM_BITS: u32 = 48;
+    const CAPACITY: u32 = 0;
+    const TWO_INV: Self = TWO_INV;
+    const MULTIPLICATIVE_GENERATOR: Self = MULTIPLICATIVE_GENERATOR;
+    const S: u32 = 0;
+    const ROOT_OF_UNITY: Self = Fp::ZERO;
+    const ROOT_OF_UNITY_INV: Self = Fp::ZERO;
+    const DELTA: Self = Fp::ZERO;
+}
+
+impl WithSmallOrderMulGroup<3> for Fp {
+    const ZETA: Self = ZETA_BASE;
+}
+
+impl PrimeFieldBits for Fp {
+    type ReprBits = [u64; 6];
+
+    fn to_le_bits(&self) -> ff::FieldBits<Self::ReprBits> {
+        let bytes: [u8; 48] = self.to_repr().0;
+
+        const STEP: usize = 8;
+
+        let limbs = (0..6)
+            .map(|off| u64::from_le_bytes(bytes[off * STEP..(off + 1) * STEP].try_into().unwrap()))
+            .collect::<Vec<_>>();
+
+        ff::FieldBits::new(limbs.try_into().unwrap())
+    }
+
+    fn char_le_bits() -> ff::FieldBits<Self::ReprBits> {
+        // Hardcoded limbs of modulus
+        let hex = |a: &str| u64::from_str_radix(a, 16).unwrap();
+        let modulus_limbs = [
+            hex("0xb9feffffffffaaab"),
+            hex("0x1eabfffeb153ffff"),
+            hex("0x6730d2a0f6b0f624"),
+            hex("0x64774b84f38512bf"),
+            hex("0x4b1ba7b6434bacd7"),
+            hex("0x1a0111ea397fe69a"),
+        ];
+        ff::FieldBits::new(modulus_limbs)
     }
 }
 

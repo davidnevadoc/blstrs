@@ -111,7 +111,7 @@ fn deserialize_affine<'de, D: Deserializer<'de>, C: PrimeCurveAffine>(d: D) -> R
 
 impl Serialize for Scalar {
     fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
-        let bytes = self.to_bytes_le();
+        let bytes = self.to_bytes();
         let u64s = [
             u64::from_le_bytes(<[u8; 8]>::try_from(&bytes[0..8]).unwrap()),
             u64::from_le_bytes(<[u8; 8]>::try_from(&bytes[8..16]).unwrap()),
@@ -124,8 +124,8 @@ impl Serialize for Scalar {
 
 impl<'de> Deserialize<'de> for Scalar {
     fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
-        let deser = <[u64; 4]>::deserialize(d)?;
-        match Scalar::from_u64s_le(&deser).into() {
+        let deser = <[u8; 32]>::deserialize(d)?;
+        match Scalar::from_bytes(&deser).into() {
             Some(scalar) => Ok(scalar),
             None => Err(D::Error::custom(ERR_CODE)),
         }

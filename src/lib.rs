@@ -23,9 +23,16 @@ mod pairing;
 mod scalar;
 mod traits;
 
+mod arithmetic;
+mod jubjub;
+#[macro_use]
+pub(crate) mod binops;
+
+pub use fp::Fp;
 pub use g1::{G1Affine, G1Compressed, G1Projective, G1Uncompressed};
 pub use g2::{G2Affine, G2Compressed, G2Prepared, G2Projective, G2Uncompressed};
 pub use gt::Gt;
+pub use jubjub::*;
 pub use pairing::*;
 pub use scalar::Scalar;
 pub use traits::Compress;
@@ -34,11 +41,11 @@ pub use traits::Compress;
 mod serde_impl;
 
 #[cfg(test)]
-mod tests;
+pub mod tests;
 
 // export for benchmarking only
 #[cfg(feature = "__private_bench")]
-pub use crate::{fp::Fp, fp12::Fp12, fp2::Fp2};
+pub use crate::{fp12::Fp12, fp2::Fp2};
 
 use ff::Field;
 use group::prime::PrimeCurveAffine;
