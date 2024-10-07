@@ -7,7 +7,7 @@ use core::{
     iter::Sum,
     ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign},
 };
-use std::io::Read;
+use std::{convert::TryInto, io::Read};
 
 use blst::*;
 use ff::Field;
@@ -15,6 +15,7 @@ use group::{
     prime::{PrimeCurve, PrimeCurveAffine, PrimeGroup},
     Curve, Group, GroupEncoding, UncompressedEncoding, WnafGroup,
 };
+use halo2curves::serde::SerdeObject;
 use pasta_curves::arithmetic::{Coordinates, CurveAffine, CurveExt};
 use rand_core::RngCore;
 use subtle::{Choice, ConditionallySelectable, ConstantTimeEq, CtOption};
@@ -450,6 +451,39 @@ impl G1Affine {
                 "not on curve",
             ))
         }
+    }
+}
+
+impl SerdeObject for G1Affine {
+    fn from_raw_bytes_unchecked(bytes: &[u8]) -> Self {
+        debug_assert_eq!(bytes.len(), UNCOMPRESSED_SIZE);
+        let input: [u8; UNCOMPRESSED_SIZE] = bytes.try_into().unwrap();
+        Self::from_uncompressed_unchecked(&input).unwrap()
+    }
+
+    fn from_raw_bytes(bytes: &[u8]) -> Option<Self> {
+        debug_assert_eq!(bytes.len(), UNCOMPRESSED_SIZE);
+        let input: [u8; UNCOMPRESSED_SIZE] = bytes.try_into().unwrap();
+        Self::from_uncompressed(&input).into()
+    }
+
+    fn to_raw_bytes(&self) -> Vec<u8> {
+        let mut res = Vec::with_capacity(UNCOMPRESSED_SIZE);
+        Self::write_raw(self, &mut res).unwrap();
+        res
+    }
+
+    fn read_raw_unchecked<R: Read>(reader: &mut R) -> Self {
+        Self::read_raw_og(reader).unwrap()
+    }
+
+    fn read_raw<R: Read>(reader: &mut R) -> std::io::Result<Self> {
+        Self::read_raw_checked(reader)
+    }
+
+    fn write_raw<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
+        self.x().write_raw(writer)?;
+        self.y().write_raw(writer)
     }
 }
 
