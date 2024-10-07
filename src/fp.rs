@@ -2,6 +2,7 @@
 //! where `p = 0x1a0111ea397fe69a4b1ba7b6434bacd764774b84f38512bf6730d2a0f6b0f6241eabfffeb153ffffb9feffffffffaaab`
 
 use blst::*;
+use halo2curves::serde::SerdeObject;
 
 use core::{
     cmp, fmt,
@@ -516,6 +517,10 @@ fn is_valid_u64(le_bytes: &[u64; 6]) -> bool {
 }
 
 const NUM_BITS: u32 = 381;
+// Number of 64-bit limbs.
+const NUM_LIMBS: usize = 6;
+// Size in bytes.
+const SIZE: usize = 48;
 /// The number of bits we should "shave" from a randomly sampled reputation.
 const REPR_SHAVE_BITS: usize = 384 - NUM_BITS as usize;
 
@@ -790,7 +795,7 @@ impl PrimeField for Fp {
     }
 
     const MODULUS: &'static str = "0x1a0111ea397fe69a4b1ba7b6434bacd764774b84f38512bf6730d2a0f6b0f6241eabfffeb153ffffb9feffffffffaaab";
-    const NUM_BITS: u32 = 381;
+    const NUM_BITS: u32 = NUM_BITS;
     const CAPACITY: u32 = Self::NUM_BITS - 1;
     const TWO_INV: Self = TWO_INV;
     const MULTIPLICATIVE_GENERATOR: Self = GENERATOR;
@@ -829,6 +834,67 @@ impl PrimeFieldBits for Fp {
             hex("0x1a0111ea397fe69a"),
         ];
         ff::FieldBits::new(modulus_limbs)
+    }
+}
+
+impl SerdeObject for Fp {
+    // Don't call this method of untrusted input. No checks performed before unsafe block.
+    fn from_raw_bytes_unchecked(bytes: &[u8]) -> Self {
+        debug_assert_eq!(bytes.len(), SIZE);
+        let mut out = blst_fp::default();
+        unsafe { blst_fp_from_lendian(&mut out, bytes.as_ptr()) };
+        Self(out)
+    }
+
+    fn from_raw_bytes(bytes: &[u8]) -> Option<Self> {
+        let input: [u8; SIZE] = bytes.try_into().expect(&format!("Expected {} bytes", SIZE));
+        Self::from_bytes_le(&input).into()
+    }
+
+    fn to_raw_bytes(&self) -> Vec<u8> {
+        let mut res = Vec::with_capacity(NUM_LIMBS * 8);
+        for limb in self.0.l.iter() {
+            res.extend_from_slice(&limb.to_le_bytes());
+        }
+        res
+    }
+
+    // Don't call this method of untrusted input. No checks performed before unsafe block.
+    fn read_raw_unchecked<R: std::io::Read>(reader: &mut R) -> Self {
+        let inner = [(); NUM_LIMBS].map(|_| {
+            let mut buf = [0; 8];
+            reader.read_exact(&mut buf).unwrap();
+            u64::from_le_bytes(buf)
+        });
+
+        let mut out = blst_fp::default();
+        unsafe { blst_fp_from_uint64(&mut out, inner.as_ptr()) };
+        Self(out)
+    }
+
+    fn read_raw<R: std::io::Read>(reader: &mut R) -> std::io::Result<Self> {
+        let mut inner = [0u64; NUM_LIMBS];
+        for limb in inner.iter_mut() {
+            let mut buf = [0; 8];
+            reader.read_exact(&mut buf)?;
+            *limb = u64::from_le_bytes(buf);
+        }
+        let out = Self::from_u64s_le(&inner);
+        if out.is_none().into() {
+            Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "Invalid data.",
+            ))
+        } else {
+            Ok(out.unwrap())
+        }
+    }
+
+    fn write_raw<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
+        for limb in self.0.l.iter() {
+            writer.write_all(&limb.to_le_bytes())?;
+        }
+        Ok(())
     }
 }
 
