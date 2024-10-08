@@ -847,7 +847,9 @@ impl SerdeObject for Fp {
     }
 
     fn from_raw_bytes(bytes: &[u8]) -> Option<Self> {
-        let input: [u8; SIZE] = bytes.try_into().expect(&format!("Expected {} bytes", SIZE));
+        let input: [u8; SIZE] = bytes
+            .try_into()
+            .unwrap_or_else(|_| panic!("Expected {} bytes", SIZE));
         Self::from_bytes_le(&input).into()
     }
 
