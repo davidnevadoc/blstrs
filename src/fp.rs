@@ -838,7 +838,7 @@ impl PrimeFieldBits for Fp {
 }
 
 impl SerdeObject for Fp {
-    // Don't call this method of untrusted input. No checks performed before unsafe block.
+    // Don't call this method with untrusted input. No checks performed before unsafe block.
     fn from_raw_bytes_unchecked(bytes: &[u8]) -> Self {
         debug_assert_eq!(bytes.len(), SIZE);
         let mut out = blst_fp::default();
@@ -859,13 +859,14 @@ impl SerdeObject for Fp {
         res
     }
 
-    // Don't call this method of untrusted input. No checks performed before unsafe block.
+    // Don't call this method with untrusted input. No checks performed before unsafe block.
     fn read_raw_unchecked<R: std::io::Read>(reader: &mut R) -> Self {
-        let inner = [(); NUM_LIMBS].map(|_| {
+        let mut inner = [0u64; NUM_LIMBS];
+        for limb in inner.iter_mut() {
             let mut buf = [0; 8];
             reader.read_exact(&mut buf).unwrap();
-            u64::from_le_bytes(buf)
-        });
+            *limb = u64::from_le_bytes(buf)
+        }
 
         let mut out = blst_fp::default();
         unsafe { blst_fp_from_uint64(&mut out, inner.as_ptr()) };
@@ -879,6 +880,7 @@ impl SerdeObject for Fp {
             reader.read_exact(&mut buf)?;
             *limb = u64::from_le_bytes(buf);
         }
+
         let out = Self::from_u64s_le(&inner);
         if out.is_none().into() {
             Err(std::io::Error::new(
