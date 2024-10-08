@@ -13,6 +13,7 @@ use core::{
 use blst::*;
 use byte_slice_cast::AsByteSlice;
 use ff::{Field, FieldBits, PrimeField, PrimeFieldBits, WithSmallOrderMulGroup};
+use halo2curves::serde::SerdeObject;
 use rand_core::RngCore;
 use subtle::{Choice, ConditionallySelectable, ConstantTimeEq, CtOption};
 
@@ -350,6 +351,11 @@ impl_add_sub_assign!(Scalar);
 impl_mul!(Scalar);
 impl_mul_assign!(Scalar);
 
+const NUM_BITS: u32 = 255;
+// Number of 64-bit limbs.
+const NUM_LIMBS: usize = 4;
+// Size in bytes.
+const SIZE: usize = 32;
 /// The number of bits we should "shave" from a randomly sampled reputation.
 const REPR_SHAVE_BITS: usize = 256 - Scalar::NUM_BITS as usize;
 
@@ -445,7 +451,7 @@ impl PrimeField for Scalar {
     // Little-endian non-Montgomery form bigint mod p.
     type Repr = [u8; 32];
 
-    const NUM_BITS: u32 = 255;
+    const NUM_BITS: u32 = NUM_BITS;
     const CAPACITY: u32 = Self::NUM_BITS - 1;
     const S: u32 = S;
 
@@ -828,6 +834,71 @@ impl Scalar {
     #[inline]
     pub fn square_assign(&mut self) {
         unsafe { blst_fr_sqr(&mut self.0, &self.0) };
+    }
+}
+
+impl SerdeObject for Scalar {
+    // Don't call this method with untrusted input. No checks performed before unsafe block.
+    fn from_raw_bytes_unchecked(bytes: &[u8]) -> Self {
+        debug_assert_eq!(bytes.len(), SIZE);
+        let bytes: [u8; SIZE] = bytes.try_into().unwrap();
+        let mut out = blst_fr::default();
+        let bytes_u64 = u64s_from_bytes(&bytes);
+        unsafe { blst_fr_from_uint64(&mut out, bytes_u64.as_ptr()) };
+        Self(out)
+    }
+
+    fn from_raw_bytes(bytes: &[u8]) -> Option<Self> {
+        let input: [u8; SIZE] = bytes.try_into().expect(&format!("Expected {} bytes", SIZE));
+        Self::from_bytes_le(&input).into()
+    }
+
+    fn to_raw_bytes(&self) -> Vec<u8> {
+        let mut res = Vec::with_capacity(NUM_LIMBS * 8);
+        for limb in self.0.l.iter() {
+            res.extend_from_slice(&limb.to_le_bytes());
+        }
+        res
+    }
+
+    // Don't call this method with untrusted input. No checks performed before unsafe block.
+    fn read_raw_unchecked<R: std::io::Read>(reader: &mut R) -> Self {
+        let mut inner = [0u64; NUM_LIMBS];
+        for limb in inner.iter_mut() {
+            let mut buf = [0; 8];
+            reader.read_exact(&mut buf).unwrap();
+            *limb = u64::from_le_bytes(buf)
+        }
+
+        let mut out = blst_fr::default();
+        unsafe { blst_fr_from_uint64(&mut out, inner.as_ptr()) };
+        Self(out)
+    }
+
+    fn read_raw<R: std::io::Read>(reader: &mut R) -> std::io::Result<Self> {
+        let mut inner = [0u64; NUM_LIMBS];
+        for limb in inner.iter_mut() {
+            let mut buf = [0; 8];
+            reader.read_exact(&mut buf)?;
+            *limb = u64::from_le_bytes(buf);
+        }
+
+        let out = Self::from_u64s_le(&inner);
+        if out.is_none().into() {
+            Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "Invalid data.",
+            ))
+        } else {
+            Ok(out.unwrap())
+        }
+    }
+
+    fn write_raw<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
+        for limb in self.0.l.iter() {
+            writer.write_all(&limb.to_le_bytes())?;
+        }
+        Ok(())
     }
 }
 
