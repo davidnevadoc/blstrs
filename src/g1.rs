@@ -418,10 +418,6 @@ impl G1Affine {
     }
 
     pub fn read_raw_og<R: Read>(mut reader: R) -> Result<Self, std::io::Error> {
-        let mut buf = [0u8];
-        reader.read_exact(&mut buf)?;
-        let _infinity = buf[0] == 1;
-
         let mut buf = [0u8; UNCOMPRESSED_SIZE];
         reader.read_exact(&mut buf)?;
         let res = Self::from_uncompressed_unchecked(&buf);
@@ -436,9 +432,6 @@ impl G1Affine {
     }
 
     pub fn read_raw_checked<R: Read>(mut reader: R) -> Result<Self, std::io::Error> {
-        let mut buf = [0u8];
-        reader.read_exact(&mut buf)?;
-
         let mut buf = [0u8; UNCOMPRESSED_SIZE];
         reader.read_exact(&mut buf)?;
         let res = Self::from_uncompressed(&buf);
@@ -481,8 +474,8 @@ impl SerdeObject for G1Affine {
     }
 
     fn write_raw<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
-        self.write_raw_og(writer)?;
-        Ok(())
+        self.x().write_raw(writer)?;
+        self.y().write_raw(writer)
     }
 }
 
