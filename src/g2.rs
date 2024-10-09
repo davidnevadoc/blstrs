@@ -418,10 +418,6 @@ impl G2Affine {
     }
 
     fn read_raw_og<R: Read>(mut reader: R) -> Result<Self, std::io::Error> {
-        let mut buf = [0u8];
-        reader.read_exact(&mut buf)?;
-        let _infinity = buf[0] == 1;
-
         let mut buf = [0u8; UNCOMPRESSED_SIZE];
         reader.read_exact(&mut buf)?;
         let res = Self::from_uncompressed_unchecked(&buf);
@@ -430,16 +426,12 @@ impl G2Affine {
         } else {
             Err(std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
-                "not on curve",
+                "Not on curve.",
             ))
         }
     }
 
     fn read_raw_checked<R: Read>(mut reader: R) -> Result<Self, std::io::Error> {
-        let mut buf = [0u8];
-        reader.read_exact(&mut buf)?;
-        let _infinity = buf[0] == 1;
-
         let mut buf = [0u8; UNCOMPRESSED_SIZE];
         reader.read_exact(&mut buf)?;
         let res = Self::from_uncompressed(&buf);
@@ -448,7 +440,7 @@ impl G2Affine {
         } else {
             Err(std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
-                "not on curve",
+                "Not on curve.",
             ))
         }
     }
@@ -468,9 +460,7 @@ impl SerdeObject for G2Affine {
     }
 
     fn to_raw_bytes(&self) -> Vec<u8> {
-        let mut res = Vec::with_capacity(UNCOMPRESSED_SIZE);
-        Self::write_raw(self, &mut res).unwrap();
-        res
+        self.to_uncompressed().into()
     }
 
     fn read_raw_unchecked<R: Read>(reader: &mut R) -> Self {
@@ -482,8 +472,7 @@ impl SerdeObject for G2Affine {
     }
 
     fn write_raw<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
-        self.x().write_raw(writer)?;
-        self.y().write_raw(writer)
+        writer.write_all(&self.to_uncompressed())
     }
 }
 

@@ -406,15 +406,9 @@ impl G1Affine {
     }
 
     pub fn write_raw_og<W: std::io::Write>(&self, mut writer: W) -> Result<usize, std::io::Error> {
-        if self.is_identity().into() {
-            writer.write_all(&[1])?;
-        } else {
-            writer.write_all(&[0])?;
-        }
         let raw = self.to_uncompressed();
         writer.write_all(&raw)?;
-
-        Ok(Self::raw_fmt_size())
+        Ok(UNCOMPRESSED_SIZE)
     }
 
     pub fn read_raw_og<R: Read>(mut reader: R) -> Result<Self, std::io::Error> {
@@ -426,7 +420,7 @@ impl G1Affine {
         } else {
             Err(std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
-                "not on curve",
+                "Not on curve.",
             ))
         }
     }
@@ -440,7 +434,7 @@ impl G1Affine {
         } else {
             Err(std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
-                "not on curve",
+                "Not on curve.",
             ))
         }
     }
@@ -460,9 +454,7 @@ impl SerdeObject for G1Affine {
     }
 
     fn to_raw_bytes(&self) -> Vec<u8> {
-        let mut res = Vec::with_capacity(UNCOMPRESSED_SIZE);
-        Self::write_raw(self, &mut res).unwrap();
-        res
+        self.to_uncompressed().into()
     }
 
     fn read_raw_unchecked<R: Read>(reader: &mut R) -> Self {
@@ -474,8 +466,7 @@ impl SerdeObject for G1Affine {
     }
 
     fn write_raw<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
-        self.x().write_raw(writer)?;
-        self.y().write_raw(writer)
+        writer.write_all(&self.to_uncompressed())
     }
 }
 
@@ -1538,12 +1529,14 @@ mod tests {
         ]);
 
         for _ in 0..100 {
+            // Affine
             let el: G1Affine = G1Projective::random(&mut rng).into();
             let c = el.to_compressed();
             assert_eq!(G1Affine::from_compressed(&c).unwrap(), el);
             assert_eq!(G1Affine::from_compressed_unchecked(&c).unwrap(), el);
 
             let u = el.to_uncompressed();
+            dbg!(u);
             assert_eq!(G1Affine::from_uncompressed(&u).unwrap(), el);
             assert_eq!(G1Affine::from_uncompressed_unchecked(&u).unwrap(), el);
 
@@ -1551,6 +1544,12 @@ mod tests {
             assert_eq!(G1Affine::from_bytes(&c).unwrap(), el);
             assert_eq!(G1Affine::from_bytes_unchecked(&c).unwrap(), el);
 
+            let c = el.to_raw_bytes();
+            dbg!(c.clone());
+            assert_eq!(G1Affine::from_raw_bytes(&c).unwrap(), el);
+            assert_eq!(G1Affine::from_raw_bytes_unchecked(&c), el);
+
+            // Projective
             let el = G1Projective::random(&mut rng);
             let c = el.to_compressed();
             assert_eq!(G1Projective::from_compressed(&c).unwrap(), el);
