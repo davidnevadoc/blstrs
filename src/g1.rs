@@ -481,8 +481,8 @@ impl SerdeObject for G1Affine {
     }
 
     fn write_raw<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
-        self.x().write_raw(writer)?;
-        self.y().write_raw(writer)
+        self.write_raw_og(writer)?;
+        Ok(())
     }
 }
 
