@@ -310,9 +310,10 @@ impl ConditionallySelectable for G1Projective {
     }
 }
 
+// Internal serializations methods.
 impl G1Affine {
     /// Serializes this element into compressed form.
-    pub fn to_compressed(&self) -> [u8; COMPRESSED_SIZE] {
+    fn to_compressed(&self) -> [u8; COMPRESSED_SIZE] {
         let mut out = [0u8; COMPRESSED_SIZE];
 
         unsafe {
@@ -323,9 +324,8 @@ impl G1Affine {
     }
 
     /// Serializes this element into uncompressed form.
-    pub fn to_uncompressed(&self) -> [u8; UNCOMPRESSED_SIZE] {
+    fn to_uncompressed(&self) -> [u8; UNCOMPRESSED_SIZE] {
         let mut out = [0u8; UNCOMPRESSED_SIZE];
-
         unsafe {
             blst_p1_affine_serialize(out.as_mut_ptr(), &self.0);
         }
@@ -334,7 +334,7 @@ impl G1Affine {
     }
 
     /// Attempts to deserialize an uncompressed element.
-    pub fn from_uncompressed(bytes: &[u8; UNCOMPRESSED_SIZE]) -> CtOption<Self> {
+    fn from_uncompressed(bytes: &[u8; UNCOMPRESSED_SIZE]) -> CtOption<Self> {
         G1Affine::from_uncompressed_unchecked(bytes)
             .and_then(|p| CtOption::new(p, p.is_on_curve() & p.is_torsion_free()))
     }
@@ -344,7 +344,7 @@ impl G1Affine {
     ///
     /// **This is dangerous to call unless you trust the bytes you are reading; otherwise,
     /// API invariants may be broken.** Please consider using `from_uncompressed()` instead.
-    pub fn from_uncompressed_unchecked(bytes: &[u8; UNCOMPRESSED_SIZE]) -> CtOption<Self> {
+    fn from_uncompressed_unchecked(bytes: &[u8; UNCOMPRESSED_SIZE]) -> CtOption<Self> {
         let mut raw = blst_p1_affine::default();
         let success =
             unsafe { blst_p1_deserialize(&mut raw, bytes.as_ptr()) == BLST_ERROR::BLST_SUCCESS };
@@ -352,7 +352,7 @@ impl G1Affine {
     }
 
     /// Attempts to deserialize a compressed element.
-    pub fn from_compressed(bytes: &[u8; COMPRESSED_SIZE]) -> CtOption<Self> {
+    fn from_compressed(bytes: &[u8; COMPRESSED_SIZE]) -> CtOption<Self> {
         G1Affine::from_compressed_unchecked(bytes)
             .and_then(|p| CtOption::new(p, p.is_on_curve() & p.is_torsion_free()))
     }
@@ -362,13 +362,23 @@ impl G1Affine {
     ///
     /// **This is dangerous to call unless you trust the bytes you are reading; otherwise,
     /// API invariants may be broken.** Please consider using `from_compressed()` instead.
-    pub fn from_compressed_unchecked(bytes: &[u8; COMPRESSED_SIZE]) -> CtOption<Self> {
+    fn from_compressed_unchecked(bytes: &[u8; COMPRESSED_SIZE]) -> CtOption<Self> {
         let mut raw = blst_p1_affine::default();
         let success =
             unsafe { blst_p1_uncompress(&mut raw, bytes.as_ptr()) == BLST_ERROR::BLST_SUCCESS };
         CtOption::new(G1Affine(raw), Choice::from(success as u8))
     }
 
+    pub const fn uncompressed_size() -> usize {
+        UNCOMPRESSED_SIZE
+    }
+
+    pub const fn compressed_size() -> usize {
+        COMPRESSED_SIZE
+    }
+}
+
+impl G1Affine {
     /// Returns true if this point is free of an $h$-torsion component, and so it
     /// exists within the $q$-order subgroup $\mathbb{G}_1$. This should always return true
     /// unless an "unchecked" API was used.
@@ -393,52 +403,11 @@ impl G1Affine {
         Fp(self.0.y)
     }
 
-    pub const fn uncompressed_size() -> usize {
-        UNCOMPRESSED_SIZE
-    }
-
-    pub const fn compressed_size() -> usize {
-        COMPRESSED_SIZE
-    }
-
-    #[inline]
-    pub fn raw_fmt_size() -> usize {
-        let s = G1Affine::uncompressed_size();
-        s + 1
-    }
-
-    pub fn write_raw_og<W: std::io::Write>(&self, mut writer: W) -> Result<usize, std::io::Error> {
-        let raw = self.to_uncompressed();
-        writer.write_all(&raw)?;
-        Ok(UNCOMPRESSED_SIZE)
-    }
-
-    pub fn read_raw_og<R: Read>(mut reader: R) -> Result<Self, std::io::Error> {
-        let mut buf = [0u8; UNCOMPRESSED_SIZE];
-        reader.read_exact(&mut buf)?;
-        let res = Self::from_uncompressed_unchecked(&buf);
-        if res.is_some().into() {
-            Ok(res.unwrap())
-        } else {
-            Err(std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                "Not on curve.",
-            ))
-        }
-    }
-
-    pub fn read_raw_checked<R: Read>(mut reader: R) -> Result<Self, std::io::Error> {
-        let mut buf = [0u8; UNCOMPRESSED_SIZE];
-        reader.read_exact(&mut buf)?;
-        let res = Self::from_uncompressed(&buf);
-        if res.is_some().into() {
-            Ok(res.unwrap())
-        } else {
-            Err(std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                "Not on curve.",
-            ))
-        }
+    // Internal wrapper for `blst_p1_affine`.
+    fn from_raw_unchecked(x: Fp, y: Fp, _infinity: bool) -> Self {
+        // FIXME: what about infinity?
+        let raw = blst_p1_affine { x: x.0, y: y.0 };
+        G1Affine(raw)
     }
 }
 
@@ -460,11 +429,26 @@ impl SerdeObject for G1Affine {
     }
 
     fn read_raw_unchecked<R: Read>(reader: &mut R) -> Self {
-        Self::read_raw_og(reader).unwrap()
+        let mut buf = [0u8; UNCOMPRESSED_SIZE];
+        reader
+            .read_exact(&mut buf)
+            .expect("Could not read from buffer.");
+        Self::from_uncompressed_unchecked(&buf)
+            .expect("from_uncompressed_unchecked should return a point.")
     }
 
     fn read_raw<R: Read>(reader: &mut R) -> std::io::Result<Self> {
-        Self::read_raw_checked(reader)
+        let mut buf = [0u8; UNCOMPRESSED_SIZE];
+        reader.read_exact(&mut buf)?;
+        let res = Self::from_uncompressed(&buf);
+        if res.is_some().into() {
+            Ok(res.unwrap())
+        } else {
+            Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "Invalid point. (Either not on curve, or not in subgroup.",
+            ))
+        }
     }
 
     fn write_raw<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
@@ -532,45 +516,20 @@ impl PartialEq for G1Projective {
     }
 }
 
+// Internal serializations methods.
 impl G1Projective {
     /// Serializes this element into compressed form.
-    pub fn to_compressed(&self) -> [u8; COMPRESSED_SIZE] {
+    fn to_compressed(&self) -> [u8; COMPRESSED_SIZE] {
         let mut out = [0u8; COMPRESSED_SIZE];
 
         unsafe {
             blst_p1_compress(out.as_mut_ptr(), &self.0);
         }
-
         out
-    }
-
-    /// Serializes this element into uncompressed form.
-    pub fn to_uncompressed(&self) -> [u8; UNCOMPRESSED_SIZE] {
-        let mut out = [0u8; UNCOMPRESSED_SIZE];
-
-        unsafe {
-            blst_p1_serialize(out.as_mut_ptr(), &self.0);
-        }
-
-        out
-    }
-
-    /// Attempts to deserialize an uncompressed element.
-    pub fn from_uncompressed(bytes: &[u8; UNCOMPRESSED_SIZE]) -> CtOption<Self> {
-        G1Affine::from_uncompressed(bytes).map(Into::into)
-    }
-
-    /// Attempts to deserialize an uncompressed element, not checking if the
-    /// element is on the curve and not checking if it is in the correct subgroup.
-    ///
-    /// **This is dangerous to call unless you trust the bytes you are reading; otherwise,
-    /// API invariants may be broken.** Please consider using `from_uncompressed()` instead.
-    pub fn from_uncompressed_unchecked(bytes: &[u8; UNCOMPRESSED_SIZE]) -> CtOption<Self> {
-        G1Affine::from_uncompressed_unchecked(bytes).map(Into::into)
     }
 
     /// Attempts to deserialize a compressed element.
-    pub fn from_compressed(bytes: &[u8; COMPRESSED_SIZE]) -> CtOption<Self> {
+    fn from_compressed(bytes: &[u8; COMPRESSED_SIZE]) -> CtOption<Self> {
         G1Affine::from_compressed(bytes).map(Into::into)
     }
 
@@ -579,10 +538,12 @@ impl G1Projective {
     ///
     /// **This is dangerous to call unless you trust the bytes you are reading; otherwise,
     /// API invariants may be broken.** Please consider using `from_compressed()` instead.
-    pub fn from_compressed_unchecked(bytes: &[u8; COMPRESSED_SIZE]) -> CtOption<Self> {
+    fn from_compressed_unchecked(bytes: &[u8; COMPRESSED_SIZE]) -> CtOption<Self> {
         G1Affine::from_compressed_unchecked(bytes).map(Into::into)
     }
+}
 
+impl G1Projective {
     /// Adds this point to another point in the affine model.
     fn add_mixed(&self, rhs: &G1Affine) -> G1Projective {
         let mut out = blst_p1::default();
@@ -610,7 +571,7 @@ impl G1Projective {
         G1Projective(out)
     }
 
-    pub fn from_raw_unchecked(x: Fp, y: Fp, z: Fp) -> Self {
+    fn from_raw_unchecked(x: Fp, y: Fp, z: Fp) -> Self {
         let raw = blst_p1 {
             x: x.0,
             y: y.0,
@@ -821,8 +782,14 @@ impl UncompressedEncoding for G1Affine {
     }
 }
 
+// UncompressedEncoding is not implemented for projective coordinates
+// impl UncompressedEncoding for G1Projective{}
+
 #[derive(Copy, Clone)]
 #[repr(transparent)]
+// Wrapper for [u8; UNCOMPRESSED_SIZE].
+// This is needed to satisfy the [`Default`] bound on the Uncompressed type
+// for [`UncompressedEncoding`].
 pub struct G1Uncompressed([u8; UNCOMPRESSED_SIZE]);
 
 encoded_point_delegations!(G1Uncompressed);
@@ -1556,10 +1523,6 @@ mod tests {
             let c = el.to_compressed();
             assert_eq!(G1Projective::from_compressed(&c).unwrap(), el);
             assert_eq!(G1Projective::from_compressed_unchecked(&c).unwrap(), el);
-
-            let u = el.to_uncompressed();
-            assert_eq!(G1Projective::from_uncompressed(&u).unwrap(), el);
-            assert_eq!(G1Projective::from_uncompressed_unchecked(&u).unwrap(), el);
 
             let c = el.to_bytes();
             assert_eq!(G1Projective::from_bytes(&c).unwrap(), el);

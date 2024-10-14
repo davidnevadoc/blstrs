@@ -29,8 +29,8 @@ mod jubjub;
 pub(crate) mod binops;
 
 pub use fp::Fp;
-pub use g1::{G1Affine, G1Compressed, G1Projective, G1Uncompressed};
-pub use g2::{G2Affine, G2Compressed, G2Prepared, G2Projective, G2Uncompressed};
+pub use g1::{G1Affine, G1Projective};
+pub use g2::{G2Affine, G2Prepared, G2Projective};
 pub use gt::Gt;
 pub use jubjub::*;
 pub use pairing::*;
