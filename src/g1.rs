@@ -386,13 +386,6 @@ impl G1Affine {
         unsafe { Choice::from(blst_p1_affine_in_g1(&self.0) as u8) }
     }
 
-    pub fn from_raw_unchecked(x: Fp, y: Fp, _infinity: bool) -> Self {
-        // FIXME: what about infinity?
-        let raw = blst_p1_affine { x: x.0, y: y.0 };
-
-        G1Affine(raw)
-    }
-
     /// Returns the x coordinate.
     pub fn x(&self) -> Fp {
         Fp(self.0.x)
