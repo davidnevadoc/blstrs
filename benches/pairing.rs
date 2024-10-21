@@ -20,7 +20,7 @@ fn bench_pairing(c: &mut Criterion) {
     let g1_affine = G1Affine::from(G1Projective::random(&mut rng));
     let g2_projective = G2Projective::random(&mut rng);
     let g2_affine = G2Affine::from(&g2_projective);
-    let g2_prepared = G2Prepared::from(g2_affine.clone());
+    let g2_prepared = G2Prepared::from(g2_affine);
 
     let mm_loop_res = blstrs::Bls12::multi_miller_loop(&[(&g1_affine, &g2_prepared)]);
 
