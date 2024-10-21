@@ -4,6 +4,10 @@
 //! To run this benchmark:
 //!
 //!     cargo bench --bench msm
+//!
+//! To run the benchmark on halo2curve MSM version as well:
+//!
+//!     cargo bench --bench msm --features=h2c_compare
 
 #[macro_use]
 extern crate criterion;
@@ -11,7 +15,6 @@ extern crate criterion;
 use criterion::{BenchmarkId, Criterion};
 use ff::PrimeField;
 use group::Group;
-use halo2curves::msm::msm_best;
 use halo2curves::CurveAffine;
 use rand_core::{RngCore, SeedableRng};
 use rand_xorshift::XorShiftRng;
@@ -25,7 +28,7 @@ const SEED: [u8; 16] = [
 ];
 
 const MULTICORE_RANGE: &[u8] = &[8, 10, 12, 14, 16, 18, 20];
-const BITS: &[usize] = &[64, 128, 256];
+const BITS: &[usize] = &[256];
 
 fn generate_curvepoints<C: CurveAffine>(k: u8) -> Vec<C> {
     let n: u64 = 1 << k;
@@ -131,6 +134,7 @@ fn msm_blst(c: &mut Criterion) {
         }
     }
 
+    #[cfg(feature = "h2c_compare")]
     // Halo2Curves version.
     for (b_index, b) in BITS.iter().enumerate() {
         for k in MULTICORE_RANGE {
@@ -138,11 +142,12 @@ fn msm_blst(c: &mut Criterion) {
             let id = format!("h2c_{b}b_{k}");
             group.bench_function(BenchmarkId::new("halo2curves", id), |b| {
                 b.iter(|| {
-                    msm_best(&coeffs[b_index][..n], &bases[..n]);
+                    halo2curves::msm::msm_best(&coeffs[b_index][..n], &bases[..n]);
                 })
             });
         }
     }
+
     group.finish();
 }
 

@@ -41,6 +41,7 @@ criterion = { version = "0.3", features = ["html_reports"] }
 [features]
 default = ["serde"]
 portable = ["blst/portable"]
+h2c_compare = []
 __private_bench = []
 
 
