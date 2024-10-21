@@ -20,17 +20,15 @@ use rayon::prelude::{IntoParallelIterator, ParallelIterator};
 use std::time::SystemTime;
 
 const SAMPLE_SIZE: usize = 10;
-const MULTICORE_RANGE: &[u8] = &[8, 10, 12, 14, 16, 18, 20];
 const SEED: [u8; 16] = [
     0x59, 0x62, 0xbe, 0x5d, 0x76, 0x3d, 0x31, 0x8d, 0x17, 0xdb, 0x37, 0x32, 0x54, 0x06, 0xbc, 0xe5,
 ];
+
+const MULTICORE_RANGE: &[u8] = &[8, 10, 12, 14, 16, 18, 20];
 const BITS: &[usize] = &[64, 128, 256];
 
 fn generate_curvepoints<C: CurveAffine>(k: u8) -> Vec<C> {
-    let n: u64 = {
-        assert!(k < 64, "2^64 points maximum.");
-        1 << k
-    };
+    let n: u64 = 1 << k;
     println!("Generating 2^{k} = {n} curve points..",);
 
     let timer = SystemTime::now();
@@ -59,10 +57,7 @@ fn generate_curvepoints<C: CurveAffine>(k: u8) -> Vec<C> {
 }
 
 fn generate_coefficients<F: PrimeField>(k: u8, bits: usize) -> Vec<F> {
-    let n: u64 = {
-        assert!(k < 64, "2^64 scalars maximum.");
-        1 << k
-    };
+    let n: u64 = 1 << k;
     let max_val: Option<u128> = match bits {
         1 => Some(1),
         8 => Some(0xff),
@@ -74,8 +69,6 @@ fn generate_coefficients<F: PrimeField>(k: u8, bits: usize) -> Vec<F> {
         _ => panic!("unexpected bit size {}", bits),
     };
 
-    println!("Generating 2^{k} = {n} coefficients..",);
-    let timer = SystemTime::now();
     let coeffs = (0..n)
         .into_par_iter()
         .map_init(
@@ -102,11 +95,6 @@ fn generate_coefficients<F: PrimeField>(k: u8, bits: usize) -> Vec<F> {
             },
         )
         .collect();
-    let end = timer.elapsed().unwrap();
-    println!(
-        "Generating 2^{k} = {n} coefficients took: {} sec.\n\n",
-        end.as_secs()
-    );
     coeffs
 }
 
@@ -127,20 +115,19 @@ fn setup<C: CurveAffine>() -> (Vec<C>, Vec<Vec<C::ScalarExt>>) {
 
 fn msm_blst(c: &mut Criterion) {
     let mut group = c.benchmark_group("Msm");
+    group.significance_level(0.1).sample_size(SAMPLE_SIZE);
 
     let (bases, coeffs) = setup::<blstrs::G1Affine>();
 
+    // Blstrs version.
     for (b_index, b) in BITS.iter().enumerate() {
-        // Blstrs version.
         for k in MULTICORE_RANGE {
             let n: usize = 1 << k;
             let id = format!("blstrs_{b}b_{k}");
             let points: Vec<blstrs::G1Projective> = bases.iter().map(Into::into).collect();
-            group
-                .bench_function(BenchmarkId::new("multi_exp", id), |b| {
-                    b.iter(|| blstrs::G1Projective::multi_exp(&points[..n], &coeffs[b_index][..n]))
-                })
-                .sample_size(SAMPLE_SIZE);
+            group.bench_function(BenchmarkId::new("Blst", id), |b| {
+                b.iter(|| blstrs::G1Projective::multi_exp(&points[..n], &coeffs[b_index][..n]))
+            });
         }
     }
 
@@ -149,13 +136,11 @@ fn msm_blst(c: &mut Criterion) {
         for k in MULTICORE_RANGE {
             let n: usize = 1 << k;
             let id = format!("h2c_{b}b_{k}");
-            group
-                .bench_function(BenchmarkId::new("msm_best", id), |b| {
-                    b.iter(|| {
-                        msm_best(&coeffs[b_index][..n], &bases[..n]);
-                    })
+            group.bench_function(BenchmarkId::new("halo2curves", id), |b| {
+                b.iter(|| {
+                    msm_best(&coeffs[b_index][..n], &bases[..n]);
                 })
-                .sample_size(SAMPLE_SIZE);
+            });
         }
     }
     group.finish();
