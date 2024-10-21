@@ -11,7 +11,7 @@ extern crate criterion;
 use criterion::{BenchmarkId, Criterion};
 use ff::PrimeField;
 use group::Group;
-use halo2curves::msm::{msm_best, msm_serial};
+use halo2curves::msm::msm_best;
 use halo2curves::CurveAffine;
 use rand_core::{RngCore, SeedableRng};
 use rand_xorshift::XorShiftRng;
@@ -20,13 +20,11 @@ use rayon::prelude::{IntoParallelIterator, ParallelIterator};
 use std::time::SystemTime;
 
 const SAMPLE_SIZE: usize = 10;
-const SINGLECORE_RANGE: &[u8] = &[3, 8, 10, 12, 14, 16];
-// const MULTICORE_RANGE: &[u8] = &[3, 8, 10, 12, 14, 16, 18, 20, 22];
-const MULTICORE_RANGE: &[u8] = &[8, 10, 12, 14, 16, 18, 20, 18, 20];
+const MULTICORE_RANGE: &[u8] = &[8, 10, 12, 14, 16, 18, 20];
 const SEED: [u8; 16] = [
     0x59, 0x62, 0xbe, 0x5d, 0x76, 0x3d, 0x31, 0x8d, 0x17, 0xdb, 0x37, 0x32, 0x54, 0x06, 0xbc, 0xe5,
 ];
-const BITS: &[usize] = &[32, 64, 128, 256];
+const BITS: &[usize] = &[64, 128, 256];
 
 fn generate_curvepoints<C: CurveAffine>(k: u8) -> Vec<C> {
     let n: u64 = {
@@ -115,11 +113,7 @@ fn generate_coefficients<F: PrimeField>(k: u8, bits: usize) -> Vec<F> {
 // Generates bases and coefficients for the given ranges and
 // bit lenghts.
 fn setup<C: CurveAffine>() -> (Vec<C>, Vec<Vec<C::ScalarExt>>) {
-    let max_k = *SINGLECORE_RANGE
-        .iter()
-        .chain(MULTICORE_RANGE.iter())
-        .max()
-        .unwrap_or(&16);
+    let max_k = *MULTICORE_RANGE.iter().max().unwrap_or(&16);
     assert!(max_k < 64);
 
     let bases = generate_curvepoints::<C>(max_k);
@@ -131,76 +125,32 @@ fn setup<C: CurveAffine>() -> (Vec<C>, Vec<Vec<C::ScalarExt>>) {
     (bases, coeffs)
 }
 
-fn h2c_serial_msm<C: CurveAffine>(c: &mut Criterion) {
-    let mut group = c.benchmark_group("halo2curves serial_msm");
-
-    let (bases, coeffs) = setup::<C>();
-
-    for (b_index, b) in BITS.iter().enumerate() {
-        for k in SINGLECORE_RANGE {
-            // b bits scalar in size k MSM
-            let id = format!("{b}b_{k}");
-            group
-                .bench_function(BenchmarkId::new("singlecore", id), |b| {
-                    let n: usize = 1 << k;
-                    let mut acc = C::identity().into();
-                    b.iter(|| msm_serial(&coeffs[b_index][..n], &bases[..n], &mut acc));
-                })
-                .sample_size(SAMPLE_SIZE);
-        }
-    }
-    group.finish();
-}
-
-fn h2c_parallel_msm<C: CurveAffine>(c: &mut Criterion) {
-    let mut group = c.benchmark_group("halo2curves multicore_msm");
-
-    let (bases, coeffs) = setup::<C>();
-
-    for (b_index, b) in BITS.iter().enumerate() {
-        for k in MULTICORE_RANGE {
-            let id = format!("{b}b_{k}");
-            group
-                .bench_function(BenchmarkId::new("multicore", id), |b| {
-                    let n: usize = 1 << k;
-                    b.iter(|| {
-                        msm_best(&coeffs[b_index][..n], &bases[..n]);
-                    })
-                })
-                .sample_size(SAMPLE_SIZE);
-        }
-    }
-    group.finish();
-}
-
 fn msm_blst(c: &mut Criterion) {
-    let mut group = c.benchmark_group("blstrs msm");
+    let mut group = c.benchmark_group("Msm");
 
     let (bases, coeffs) = setup::<blstrs::G1Affine>();
 
     for (b_index, b) in BITS.iter().enumerate() {
-        // Blstrs version
+        // Blstrs version.
         for k in MULTICORE_RANGE {
-            let id = format!("{b}b_{k}");
+            let n: usize = 1 << k;
+            let id = format!("blstrs_{b}b_{k}");
             let points: Vec<blstrs::G1Projective> = bases.iter().map(Into::into).collect();
             group
-                .bench_function(BenchmarkId::new("blstrs multi_exp", id), |b| {
-                    let n: usize = 1 << k;
+                .bench_function(BenchmarkId::new("multi_exp", id), |b| {
                     b.iter(|| blstrs::G1Projective::multi_exp(&points[..n], &coeffs[b_index][..n]))
                 })
                 .sample_size(SAMPLE_SIZE);
         }
     }
-    group.finish();
 
-    let mut group = c.benchmark_group("halo2curves multicore_msm");
-
+    // Halo2Curves version.
     for (b_index, b) in BITS.iter().enumerate() {
         for k in MULTICORE_RANGE {
-            let id = format!("{b}b_{k}");
+            let n: usize = 1 << k;
+            let id = format!("h2c_{b}b_{k}");
             group
-                .bench_function(BenchmarkId::new("multicore", id), |b| {
-                    let n: usize = 1 << k;
+                .bench_function(BenchmarkId::new("msm_best", id), |b| {
                     b.iter(|| {
                         msm_best(&coeffs[b_index][..n], &bases[..n]);
                     })
@@ -210,10 +160,6 @@ fn msm_blst(c: &mut Criterion) {
     }
     group.finish();
 }
-
-// fn msm_h2c(c: &mut Criterion) {
-//     h2c_parallel_msm::<blstrs::G1Affine>(c)
-// }
 
 criterion_group!(benches, msm_blst);
 criterion_main!(benches);
