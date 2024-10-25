@@ -838,54 +838,46 @@ impl Scalar {
 }
 
 impl SerdeObject for Scalar {
-    // Don't call this method with untrusted input. No checks performed before unsafe block.
+    // This should read the internal representation directly i.e. Montgomery form.
     fn from_raw_bytes_unchecked(bytes: &[u8]) -> Self {
         debug_assert_eq!(bytes.len(), SIZE);
         let bytes: [u8; SIZE] = bytes.try_into().unwrap();
-        let mut out = blst_fr::default();
-        let bytes_u64 = u64s_from_bytes(&bytes);
-        unsafe { blst_fr_from_uint64(&mut out, bytes_u64.as_ptr()) };
-        Self(out)
+        let inner = u64s_from_bytes(&bytes);
+        Scalar(blst_fr { l: inner })
     }
 
     fn from_raw_bytes(bytes: &[u8]) -> Option<Self> {
-        let input: [u8; SIZE] = bytes
-            .try_into()
-            .unwrap_or_else(|_| panic!("Expected {} bytes", SIZE));
-        Self::from_bytes_le(&input).into()
+        if bytes.len() != SIZE {
+            return None;
+        }
+        Some(Self::from_raw_bytes_unchecked(&bytes))
+        // let out = Self::from_raw_bytes_unchecked(&bytes);
+        // Self::is_less_than_modulus(&out.0.l).then(|| out)
+        // Note: The [0, p-1] check is not performed, as it would require a Montgomery reduction.
     }
 
     fn to_raw_bytes(&self) -> Vec<u8> {
-        let mut res = Vec::with_capacity(NUM_LIMBS * 8);
+        let mut res = Vec::with_capacity(SIZE);
         for limb in self.0.l.iter() {
             res.extend_from_slice(&limb.to_le_bytes());
         }
         res
     }
 
-    // Don't call this method with untrusted input. No checks performed before unsafe block.
     fn read_raw_unchecked<R: std::io::Read>(reader: &mut R) -> Self {
-        let mut inner = [0u64; NUM_LIMBS];
-        for limb in inner.iter_mut() {
-            let mut buf = [0; 8];
-            reader.read_exact(&mut buf).unwrap();
-            *limb = u64::from_le_bytes(buf)
-        }
-
-        let mut out = blst_fr::default();
-        unsafe { blst_fr_from_uint64(&mut out, inner.as_ptr()) };
-        Self(out)
+        let mut bytes = [0u8; SIZE];
+        reader
+            .read_exact(&mut bytes)
+            .expect(&format!("Expected {} bytes.", SIZE));
+        Self::from_raw_bytes_unchecked(&bytes)
     }
 
     fn read_raw<R: std::io::Read>(reader: &mut R) -> std::io::Result<Self> {
-        let mut inner = [0u64; NUM_LIMBS];
-        for limb in inner.iter_mut() {
-            let mut buf = [0; 8];
-            reader.read_exact(&mut buf)?;
-            *limb = u64::from_le_bytes(buf);
-        }
-
-        let out = Self::from_u64s_le(&inner);
+        let mut bytes = [0u8; SIZE];
+        reader
+            .read_exact(&mut bytes)
+            .expect(&format!("Expected {} bytes.", SIZE));
+        let out = Self::from_raw_bytes(&bytes);
         if out.is_none().into() {
             Err(std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
@@ -2099,7 +2091,7 @@ mod tests {
     crate::field_testing_suite!(Scalar, "conversion");
     crate::field_testing_suite!(Scalar, "quadratic_residue");
     crate::field_testing_suite!(Scalar, "bits");
-    // crate::field_testing_suite!(Scalar, "serialization_check");
+    crate::field_testing_suite!(Scalar, "serdeobject");
     crate::field_testing_suite!(Scalar, "constants");
     crate::field_testing_suite!(Scalar, "sqrt");
     crate::field_testing_suite!(Scalar, "zeta");

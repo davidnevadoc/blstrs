@@ -516,6 +516,17 @@ fn is_valid_u64(le_bytes: &[u64; 6]) -> bool {
     false
 }
 
+fn u64s_from_bytes(bytes: &[u8; 48]) -> [u64; 6] {
+    [
+        u64::from_le_bytes(bytes[0..8].try_into().unwrap()),
+        u64::from_le_bytes(bytes[8..16].try_into().unwrap()),
+        u64::from_le_bytes(bytes[16..24].try_into().unwrap()),
+        u64::from_le_bytes(bytes[24..32].try_into().unwrap()),
+        u64::from_le_bytes(bytes[32..40].try_into().unwrap()),
+        u64::from_le_bytes(bytes[40..].try_into().unwrap()),
+    ]
+}
+
 const NUM_BITS: u32 = 381;
 // Number of 64-bit limbs.
 const NUM_LIMBS: usize = 6;
@@ -841,16 +852,16 @@ impl SerdeObject for Fp {
     // Don't call this method with untrusted input. No checks performed before unsafe block.
     fn from_raw_bytes_unchecked(bytes: &[u8]) -> Self {
         debug_assert_eq!(bytes.len(), SIZE);
-        let mut out = blst_fp::default();
-        unsafe { blst_fp_from_lendian(&mut out, bytes.as_ptr()) };
-        Self(out)
+        let bytes: [u8; SIZE] = bytes.try_into().unwrap();
+        let inner = u64s_from_bytes(&bytes);
+        Fp(blst_fp { l: inner })
     }
 
     fn from_raw_bytes(bytes: &[u8]) -> Option<Self> {
-        let input: [u8; SIZE] = bytes
-            .try_into()
-            .unwrap_or_else(|_| panic!("Expected {} bytes", SIZE));
-        Self::from_bytes_le(&input).into()
+        if bytes.len() != SIZE {
+            return None;
+        }
+        Some(Self::from_raw_bytes_unchecked(&bytes))
     }
 
     fn to_raw_bytes(&self) -> Vec<u8> {
@@ -863,27 +874,19 @@ impl SerdeObject for Fp {
 
     // Don't call this method with untrusted input. No checks performed before unsafe block.
     fn read_raw_unchecked<R: std::io::Read>(reader: &mut R) -> Self {
-        let mut inner = [0u64; NUM_LIMBS];
-        for limb in inner.iter_mut() {
-            let mut buf = [0; 8];
-            reader.read_exact(&mut buf).unwrap();
-            *limb = u64::from_le_bytes(buf)
-        }
-
-        let mut out = blst_fp::default();
-        unsafe { blst_fp_from_uint64(&mut out, inner.as_ptr()) };
-        Self(out)
+        let mut bytes = [0u8; SIZE];
+        reader
+            .read_exact(&mut bytes)
+            .expect(&format!("Expected {} bytes.", SIZE));
+        Self::from_raw_bytes_unchecked(&bytes)
     }
 
     fn read_raw<R: std::io::Read>(reader: &mut R) -> std::io::Result<Self> {
-        let mut inner = [0u64; NUM_LIMBS];
-        for limb in inner.iter_mut() {
-            let mut buf = [0; 8];
-            reader.read_exact(&mut buf)?;
-            *limb = u64::from_le_bytes(buf);
-        }
-
-        let out = Self::from_u64s_le(&inner);
+        let mut bytes = [0u8; SIZE];
+        reader
+            .read_exact(&mut bytes)
+            .expect(&format!("Expected {} bytes.", SIZE));
+        let out = Self::from_raw_bytes(&bytes);
         if out.is_none().into() {
             Err(std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
@@ -1626,10 +1629,9 @@ mod tests {
 
     crate::field_testing_suite!(Fp, "field_arithmetic");
     crate::field_testing_suite!(Fp, "conversion");
-    // crate::field_testing_suite!(Fp, "serialization");
     crate::field_testing_suite!(Fp, "quadratic_residue");
     crate::field_testing_suite!(Fp, "bits");
-    // crate::field_testing_suite!(Fp, "serialization_check");
+    crate::field_testing_suite!(Fp, "serdeobject");
     crate::field_testing_suite!(Fp, "constants");
     crate::field_testing_suite!(Fp, "sqrt");
     crate::field_testing_suite!(Fp, "zeta");

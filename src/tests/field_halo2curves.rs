@@ -281,29 +281,33 @@ macro_rules! field_testing_suite {
         }
     };
 
-    ($field: ident, "serialization_check") => {
+    ($field: ident, "serdeobject") => {
         #[test]
-        fn test_serialization_check() {
+        fn test_serdeobject() {
             use halo2curves::serde::SerdeObject;
             let mut rng = XorShiftRng::from_seed([
                 0x59, 0x62, 0xbe, 0x5d, 0x76, 0x3d, 0x31, 0x8d, 0x17, 0xdb, 0x37, 0x32, 0x54, 0x06,
                 0xbc, 0xe5,
             ]);
-            const LIMBS: usize = $field::SIZE / 8;
-            // failure check
-            for _ in 0..1000000 {
-                let rand_word = [(); LIMBS].map(|_| rng.next_u64());
-                let a = $field(rand_word);
-                let rand_bytes = a.to_raw_bytes();
 
-                match $field::is_less_than_modulus(&rand_word) {
-                    false => {
-                        assert!($field::from_raw_bytes(&rand_bytes).is_none());
-                    }
-                    _ => {
-                        assert_eq!($field::from_raw_bytes(&rand_bytes), Some(a));
-                    }
-                }
+            for _ in 0..1_000_000 {
+                let elem = $field::random(&mut rng);
+
+                let bytes = elem.to_raw_bytes();
+                let elem_rec = <$field as SerdeObject>::from_raw_bytes_unchecked(&bytes);
+
+                assert_eq!(elem, elem_rec);
+                let elem_rec = <$field as SerdeObject>::from_raw_bytes(&bytes).unwrap();
+                assert_eq!(elem, elem_rec);
+
+
+                let mut buf = Vec::new();
+                elem.write_raw(&mut buf).unwrap();
+                let elem_rec = <$field as SerdeObject>::read_raw_unchecked(&mut buf.as_slice());
+                assert_eq!(elem, elem_rec);
+
+                let elem_rec = <$field as SerdeObject>::read_raw(&mut buf.as_slice()).unwrap();
+                assert_eq!(elem, elem_rec);
             }
         }
     };
