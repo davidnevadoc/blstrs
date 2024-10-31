@@ -29,7 +29,7 @@ mod jubjub;
 pub(crate) mod binops;
 
 pub use fp::Fp;
-pub use g1::{G1Affine, G1Projective};
+pub use g1::{G1Affine, G1Projective, A, B};
 pub use g2::{G2Affine, G2Prepared, G2Projective};
 pub use gt::Gt;
 pub use jubjub::*;

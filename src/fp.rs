@@ -882,16 +882,14 @@ impl SerdeObject for Fp {
     }
 
     fn read_raw<R: std::io::Read>(reader: &mut R) -> std::io::Result<Self> {
+        use std::io::{Error, ErrorKind};
         let mut bytes = [0u8; SIZE];
         reader
             .read_exact(&mut bytes)
             .expect(&format!("Expected {} bytes.", SIZE));
         let out = Self::from_raw_bytes(&bytes);
         if out.is_none().into() {
-            Err(std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                "Invalid data.",
-            ))
+            Err(Error::new(ErrorKind::InvalidData, "Invalid data."))
         } else {
             Ok(out.unwrap())
         }
