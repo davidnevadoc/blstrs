@@ -742,14 +742,15 @@ impl AsMut<[u8]> for FpRepr {
 // computed with sage math:
 // R.<k>=PolynomialRing(GF(0x1a0111ea397fe69a4b1ba7b6434bacd764774b84f38512bf6730d2a0f6b0f6241eabfffeb153ffffb9feffffffffaaab))
 // L=(k^3-1).roots();L
+// We keep the first root for consistency with ZETA_SCALAR
 pub const ZETA_BASE: Fp = Fp(blst_fp {
     l: [
-        0x30f1_361b_798a_64e8,
-        0xf3b8_ddab_7ece_5a2a,
-        0x16a8_ca3a_c615_77f7,
-        0xc26a_2ff8_74fd_029b,
-        0x3636_b766_6070_1c6e,
-        0x051b_a4ab_241b_6160,
+        0xcd03_c9e4_8671_f071,
+        0x5dab_2246_1fcd_a5d2,
+        0x5870_42af_d385_1b95,
+        0x8eb6_0ebe_01ba_cb9e,
+        0x03f9_7d6e_83d0_50d2,
+        0x18f0_2065_5463_8741,
     ],
 });
 
