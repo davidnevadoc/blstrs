@@ -31,10 +31,9 @@ use core::iter::Sum;
 use core::ops::{Add, Mul, Neg, Sub};
 use ff::{BatchInverter, Field};
 use group::cofactor::{CofactorCurve, CofactorCurveAffine, CofactorGroup};
-use group::{
-    prime::{PrimeCurve, PrimeCurveAffine, PrimeGroup},
-    Curve, Group, GroupEncoding,
-};
+
+use group::{prime::PrimeGroup, Curve, Group, GroupEncoding};
+
 use rand_core::RngCore;
 use subtle::{Choice, ConditionallySelectable, ConstantTimeEq, CtOption};
 

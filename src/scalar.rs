@@ -352,8 +352,6 @@ impl_mul!(Scalar);
 impl_mul_assign!(Scalar);
 
 const NUM_BITS: u32 = 255;
-// Number of 64-bit limbs.
-const NUM_LIMBS: usize = 4;
 // Size in bytes.
 const SIZE: usize = 32;
 /// The number of bits we should "shave" from a randomly sampled reputation.

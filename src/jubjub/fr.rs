@@ -5,7 +5,7 @@ use core::convert::TryInto;
 use core::fmt;
 use core::ops::{Add, Mul, MulAssign, Neg, Sub};
 
-use ff::{Field, FieldBits, PrimeField, PrimeFieldBits, WithSmallOrderMulGroup};
+use ff::{Field, FieldBits, PrimeField, PrimeFieldBits};
 use rand_core::RngCore;
 use subtle::{Choice, ConditionallySelectable, ConstantTimeEq, CtOption};
 
@@ -752,13 +752,6 @@ impl PartialOrd for Fr {
     fn partial_cmp(&self, other: &Self) -> Option<core::cmp::Ordering> {
         Some(self.cmp(other))
     }
-}
-
-// NOTE: Fr does not contain a subgroup of order 3. However, implementing
-// this trait is required in order to have implement `CurveExt` for JubJub.
-impl WithSmallOrderMulGroup<3> for Fr {
-    // WARNING: This is not a cubic root in Fr. (But it makes cargo doc happy)
-    const ZETA: Self = Self::ZERO;
 }
 
 impl PrimeFieldBits for Fr {
