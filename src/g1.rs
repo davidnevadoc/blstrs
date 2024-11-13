@@ -33,8 +33,8 @@ pub struct G1Affine(pub(crate) blst_p1_affine);
 const COMPRESSED_SIZE: usize = 48;
 const UNCOMPRESSED_SIZE: usize = 96;
 
-const A: Fp = Fp::ZERO;
-const B: Fp = Fp(blst_fp {
+pub const A: Fp = Fp::ZERO;
+pub const B: Fp = Fp(blst_fp {
     // 0x04 in Montgomery form.
     l: [
         0xaa270000000cfff3,
