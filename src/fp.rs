@@ -862,7 +862,7 @@ impl SerdeObject for Fp {
         if bytes.len() != SIZE {
             return None;
         }
-        Some(Self::from_raw_bytes_unchecked(&bytes))
+        Some(Self::from_raw_bytes_unchecked(bytes))
     }
 
     fn to_raw_bytes(&self) -> Vec<u8> {
@@ -878,7 +878,7 @@ impl SerdeObject for Fp {
         let mut bytes = [0u8; SIZE];
         reader
             .read_exact(&mut bytes)
-            .expect(&format!("Expected {} bytes.", SIZE));
+            .unwrap_or_else(|_| panic!("Expected {} bytes.", SIZE));
         Self::from_raw_bytes_unchecked(&bytes)
     }
 
@@ -887,12 +887,12 @@ impl SerdeObject for Fp {
         let mut bytes = [0u8; SIZE];
         reader
             .read_exact(&mut bytes)
-            .expect(&format!("Expected {} bytes.", SIZE));
+            .unwrap_or_else(|_| panic!("Expected {} bytes.", SIZE));
         let out = Self::from_raw_bytes(&bytes);
-        if out.is_none().into() {
-            Err(Error::new(ErrorKind::InvalidData, "Invalid data."))
+        if let Some(out) = out {
+            Ok(out)
         } else {
-            Ok(out.unwrap())
+            Err(Error::new(ErrorKind::InvalidData, "Invalid data."))
         }
     }
 
