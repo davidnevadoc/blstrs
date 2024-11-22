@@ -232,7 +232,7 @@ impl From<JubjubExtended> for JubjubAffine {
 
 /// This is a pre-processed version of an affine point `(u, v)`
 /// in the form `(v + u, v - u, u * v * 2d)`. This can be added to an
-/// [`ExtendedPoint`](crate::ExtendedPoint).
+/// [`JubjubExtended`](crate::JubjubExtended).
 #[derive(Clone, Copy, Debug)]
 pub struct JubjubAffineNiels {
     v_plus_u: Base,
@@ -1162,9 +1162,9 @@ impl JubjubSubgroup {
     /// the curve or in the prime-order subgroup.
     ///
     /// This should only be used for hard-coding constants (e.g. fixed generators); in all
-    /// other cases, use [`SubgroupPoint::from_bytes`] instead.
+    /// other cases, use [`JubjubSubgroup::from_bytes`] instead.
     ///
-    /// [`SubgroupPoint::from_bytes`]: SubgroupPoint#impl-GroupEncoding
+    /// [`JubjubSubgroup::from_bytes`]: JubjubSubgroup#impl-GroupEncoding
     pub fn from_raw_unchecked(u: Base, v: Base) -> Self {
         JubjubSubgroup(JubjubAffine::from_raw_unchecked(u, v).to_extended())
     }
