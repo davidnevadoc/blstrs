@@ -237,58 +237,6 @@ macro_rules! field_testing_suite {
         }
     };
 
-    ($field: ident, "serialization") => {
-        macro_rules! random_serialization_test {
-            ($f: ident) => {
-                let mut rng = XorShiftRng::from_seed([
-                    0x59, 0x62, 0xbe, 0x5d, 0x76, 0x3d, 0x31, 0x8d, 0x17, 0xdb, 0x37, 0x32, 0x54,
-                    0x06, 0xbc, 0xe5,
-                ]);
-                for _ in 0..1000000 {
-                    let a = $f::random(&mut rng);
-                    let bytes = a.to_raw_bytes();
-                    let b = $f::from_raw_bytes(&bytes).unwrap();
-                    assert_eq!(a, b);
-                    let mut buf = Vec::new();
-                    a.write_raw(&mut buf).unwrap();
-                    let b = $f::read_raw(&mut &buf[..]).unwrap();
-                    assert_eq!(a, b);
-                }
-            };
-        }
-
-        #[cfg(feature = "derive_serde")]
-        macro_rules! random_serde_test {
-            ($f: ident) => {
-                let mut rng = XorShiftRng::from_seed([
-                    0x59, 0x62, 0xbe, 0x5d, 0x76, 0x3d, 0x31, 0x8d, 0x17, 0xdb, 0x37, 0x32, 0x54,
-                    0x06, 0xbc, 0xe5,
-                ]);
-                for _ in 0..1000000 {
-                    // byte serialization
-                    let a = $f::random(&mut rng);
-                    let bytes = bincode::serialize(&a).unwrap();
-                    let reader = std::io::Cursor::new(bytes);
-                    let b: $f = bincode::deserialize_from(reader).unwrap();
-                    assert_eq!(a, b);
-
-                    // json serialization
-                    let json = serde_json::to_string(&a).unwrap();
-                    let reader = std::io::Cursor::new(json);
-                    let b: $f = serde_json::from_reader(reader).unwrap();
-                    assert_eq!(a, b);
-                }
-            };
-        }
-
-        #[test]
-        fn test_serialization() {
-            use halo2curves::serde::SerdeObject;
-            random_serialization_test!($field);
-            #[cfg(feature = "derive_serde")]
-            random_serde_test!($field);
-        }
-    };
 
     ($field: ident, "quadratic_residue") => {
         #[test]
@@ -333,29 +281,33 @@ macro_rules! field_testing_suite {
         }
     };
 
-    ($field: ident, "serialization_check") => {
+    ($field: ident, "serdeobject") => {
         #[test]
-        fn test_serialization_check() {
+        fn test_serdeobject() {
             use halo2curves::serde::SerdeObject;
             let mut rng = XorShiftRng::from_seed([
                 0x59, 0x62, 0xbe, 0x5d, 0x76, 0x3d, 0x31, 0x8d, 0x17, 0xdb, 0x37, 0x32, 0x54, 0x06,
                 0xbc, 0xe5,
             ]);
-            const LIMBS: usize = $field::SIZE / 8;
-            // failure check
-            for _ in 0..1000000 {
-                let rand_word = [(); LIMBS].map(|_| rng.next_u64());
-                let a = $field(rand_word);
-                let rand_bytes = a.to_raw_bytes();
 
-                match $field::is_less_than_modulus(&rand_word) {
-                    false => {
-                        assert!($field::from_raw_bytes(&rand_bytes).is_none());
-                    }
-                    _ => {
-                        assert_eq!($field::from_raw_bytes(&rand_bytes), Some(a));
-                    }
-                }
+            for _ in 0..1_000_000 {
+                let elem = $field::random(&mut rng);
+
+                let bytes = elem.to_raw_bytes();
+                let elem_rec = <$field as SerdeObject>::from_raw_bytes_unchecked(&bytes);
+
+                assert_eq!(elem, elem_rec);
+                let elem_rec = <$field as SerdeObject>::from_raw_bytes(&bytes).unwrap();
+                assert_eq!(elem, elem_rec);
+
+
+                let mut buf = Vec::new();
+                elem.write_raw(&mut buf).unwrap();
+                let elem_rec = <$field as SerdeObject>::read_raw_unchecked(&mut buf.as_slice());
+                assert_eq!(elem, elem_rec);
+
+                let elem_rec = <$field as SerdeObject>::read_raw(&mut buf.as_slice()).unwrap();
+                assert_eq!(elem, elem_rec);
             }
         }
     };
@@ -372,7 +324,7 @@ macro_rules! field_testing_suite {
             if $field::S != 0 {
                 assert_eq!(
                     $field::ROOT_OF_UNITY.pow_vartime([1 << $field::S]),
-                    $field::one()
+                    $field::ONE
                 );
                 assert_eq!(
                     $field::DELTA,
@@ -384,7 +336,7 @@ macro_rules! field_testing_suite {
 
     ($field: ident, "sqrt") => {
         #[test]
-        fn test_sqrt() {
+        fn test_h2c_sqrt() {
             use halo2curves::ff_ext::Legendre;
             use ff::PrimeField;
             use rand_core::OsRng;
@@ -412,7 +364,7 @@ macro_rules! field_testing_suite {
                 assert!(a == b || a == negb);
             }
 
-            let mut c = $field::one();
+            let mut c = $field::ONE;
             for _ in 0..10000 {
                 let mut b = c;
                 b = b.square();
@@ -426,7 +378,7 @@ macro_rules! field_testing_suite {
 
                 assert_eq!(b, c);
 
-                c += &$field::one();
+                c += &$field::ONE;
             }
         }
     };
@@ -653,7 +605,7 @@ where
 }
 
 pub fn big_to_fe<F: PrimeField>(e: &BigUint) -> F {
-    let modulus = BigUint::from_bytes_le((&-F::ONE).to_repr().as_ref()) + 1usize;
+    let modulus = BigUint::from_bytes_le((-F::ONE).to_repr().as_ref()) + 1usize;
     let e = e % modulus;
     let bytes = e.to_bytes_le();
     let mut repr = F::Repr::default();

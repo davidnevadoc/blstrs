@@ -7,9 +7,8 @@ use core::{
     iter::Sum,
     ops::{Add, AddAssign, Mul, MulAssign, Neg, Sub, SubAssign},
 };
-use std::convert::TryInto;
-use std::io::{Read, Write};
 use std::ops::{Deref, DerefMut};
+use std::{convert::TryInto, io::Read};
 
 use blst::*;
 use ff::{Field, PrimeField, WithSmallOrderMulGroup};
@@ -321,7 +320,7 @@ impl ConditionallySelectable for G2Projective {
 
 impl G2Affine {
     /// Serializes this element into compressed form.
-    pub fn to_compressed(&self) -> [u8; COMPRESSED_SIZE] {
+    fn to_compressed(&self) -> [u8; COMPRESSED_SIZE] {
         let mut out = [0u8; COMPRESSED_SIZE];
 
         unsafe {
@@ -332,7 +331,7 @@ impl G2Affine {
     }
 
     /// Serializes this element into uncompressed form.
-    pub fn to_uncompressed(&self) -> [u8; UNCOMPRESSED_SIZE] {
+    fn to_uncompressed(&self) -> [u8; UNCOMPRESSED_SIZE] {
         let mut out = [0u8; UNCOMPRESSED_SIZE];
 
         unsafe {
@@ -343,7 +342,7 @@ impl G2Affine {
     }
 
     /// Attempts to deserialize an uncompressed element.
-    pub fn from_uncompressed(bytes: &[u8; UNCOMPRESSED_SIZE]) -> CtOption<Self> {
+    fn from_uncompressed(bytes: &[u8; UNCOMPRESSED_SIZE]) -> CtOption<Self> {
         G2Affine::from_uncompressed_unchecked(bytes)
             .and_then(|p| CtOption::new(p, p.is_on_curve() & p.is_torsion_free()))
     }
@@ -353,7 +352,7 @@ impl G2Affine {
     ///
     /// **This is dangerous to call unless you trust the bytes you are reading; otherwise,
     /// API invariants may be broken.** Please consider using `from_uncompressed()` instead.
-    pub fn from_uncompressed_unchecked(bytes: &[u8; UNCOMPRESSED_SIZE]) -> CtOption<Self> {
+    fn from_uncompressed_unchecked(bytes: &[u8; UNCOMPRESSED_SIZE]) -> CtOption<Self> {
         let mut raw = blst_p2_affine::default();
         let success =
             unsafe { blst_p2_deserialize(&mut raw, bytes.as_ptr()) == BLST_ERROR::BLST_SUCCESS };
@@ -361,7 +360,7 @@ impl G2Affine {
     }
 
     /// Attempts to deserialize a compressed element.
-    pub fn from_compressed(bytes: &[u8; COMPRESSED_SIZE]) -> CtOption<Self> {
+    fn from_compressed(bytes: &[u8; COMPRESSED_SIZE]) -> CtOption<Self> {
         G2Affine::from_compressed_unchecked(bytes)
             .and_then(|p| CtOption::new(p, p.is_on_curve() & p.is_torsion_free()))
     }
@@ -371,32 +370,28 @@ impl G2Affine {
     ///
     /// **This is dangerous to call unless you trust the bytes you are reading; otherwise,
     /// API invariants may be broken.** Please consider using `from_compressed()` instead.
-    pub fn from_compressed_unchecked(bytes: &[u8; COMPRESSED_SIZE]) -> CtOption<Self> {
+    fn from_compressed_unchecked(bytes: &[u8; COMPRESSED_SIZE]) -> CtOption<Self> {
         let mut raw = blst_p2_affine::default();
         let success =
             unsafe { blst_p2_uncompress(&mut raw, bytes.as_ptr()) == BLST_ERROR::BLST_SUCCESS };
         CtOption::new(G2Affine(raw), Choice::from(success as u8))
     }
 
+    pub const fn uncompressed_size() -> usize {
+        UNCOMPRESSED_SIZE
+    }
+
+    pub const fn compressed_size() -> usize {
+        COMPRESSED_SIZE
+    }
+}
+
+impl G2Affine {
     /// Returns true if this point is free of an $h$-torsion component, and so it
     /// exists within the $q$-order subgroup $\mathbb{G}_2$. This should always return true
     /// unless an "unchecked" API was used.
     pub fn is_torsion_free(&self) -> Choice {
         unsafe { Choice::from(blst_p2_affine_in_g2(&self.0) as u8) }
-    }
-
-    /// Returns true if this point is on the curve. This should always return
-    /// true unless an "unchecked" API was used.
-    pub fn is_on_curve(&self) -> Choice {
-        // FIXME: is_identity check should happen in blst
-        unsafe { Choice::from(blst_p2_affine_on_curve(&self.0) as u8) }
-    }
-
-    pub fn from_raw_unchecked(x: Fp2, y: Fp2, _infinity: bool) -> Self {
-        // FIXME: what about infinity?
-        let raw = blst_p2_affine { x: x.0, y: y.0 };
-
-        G2Affine(raw)
     }
 
     /// Returns the x coordinate.
@@ -409,12 +404,55 @@ impl G2Affine {
         Fp2(self.0.y)
     }
 
-    pub const fn uncompressed_size() -> usize {
-        UNCOMPRESSED_SIZE
+    #[cfg(test)]
+    fn from_raw_unchecked(x: Fp2, y: Fp2, _infinity: bool) -> Self {
+        let raw = blst_p2_affine { x: x.0, y: y.0 };
+        G2Affine(raw)
+    }
+}
+
+impl SerdeObject for G2Affine {
+    fn from_raw_bytes_unchecked(bytes: &[u8]) -> Self {
+        debug_assert_eq!(bytes.len(), UNCOMPRESSED_SIZE);
+        let input: [u8; UNCOMPRESSED_SIZE] = bytes.try_into().unwrap();
+        Self::from_uncompressed_unchecked(&input).unwrap()
     }
 
-    pub const fn compressed_size() -> usize {
-        COMPRESSED_SIZE
+    fn from_raw_bytes(bytes: &[u8]) -> Option<Self> {
+        debug_assert_eq!(bytes.len(), UNCOMPRESSED_SIZE);
+        let input: [u8; UNCOMPRESSED_SIZE] = bytes.try_into().unwrap();
+        Self::from_uncompressed(&input).into()
+    }
+
+    fn to_raw_bytes(&self) -> Vec<u8> {
+        self.to_uncompressed().into()
+    }
+
+    fn read_raw_unchecked<R: Read>(reader: &mut R) -> Self {
+        let mut buf = [0u8; UNCOMPRESSED_SIZE];
+        reader
+            .read_exact(&mut buf)
+            .expect("Could not read from buffer.");
+        Self::from_uncompressed_unchecked(&buf)
+            .expect("from_uncompressed_unchecked should return a point.")
+    }
+
+    fn read_raw<R: Read>(reader: &mut R) -> std::io::Result<Self> {
+        let mut buf = [0u8; UNCOMPRESSED_SIZE];
+        reader.read_exact(&mut buf)?;
+        let res = Self::from_uncompressed(&buf);
+        if res.is_some().into() {
+            Ok(res.unwrap())
+        } else {
+            Err(std::io::Error::new(
+                std::io::ErrorKind::InvalidData,
+                "Invalid point. (Either not on curve, or not in subgroup.",
+            ))
+        }
+    }
+
+    fn write_raw<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
+        writer.write_all(&self.to_uncompressed())
     }
 }
 
@@ -480,7 +518,7 @@ impl PartialEq for G2Projective {
 
 impl G2Projective {
     /// Serializes this element into compressed form.
-    pub fn to_compressed(&self) -> [u8; COMPRESSED_SIZE] {
+    fn to_compressed(&self) -> [u8; COMPRESSED_SIZE] {
         let mut out = [0u8; COMPRESSED_SIZE];
 
         unsafe {
@@ -490,33 +528,8 @@ impl G2Projective {
         out
     }
 
-    /// Serializes this element into uncompressed form.
-    pub fn to_uncompressed(&self) -> [u8; UNCOMPRESSED_SIZE] {
-        let mut out = [0u8; UNCOMPRESSED_SIZE];
-
-        unsafe {
-            blst_p2_serialize(out.as_mut_ptr(), &self.0);
-        }
-
-        out
-    }
-
-    /// Attempts to deserialize an uncompressed element.
-    pub fn from_uncompressed(bytes: &[u8; UNCOMPRESSED_SIZE]) -> CtOption<Self> {
-        G2Affine::from_uncompressed(bytes).map(Into::into)
-    }
-
-    /// Attempts to deserialize an uncompressed element, not checking if the
-    /// element is on the curve and not checking if it is in the correct subgroup.
-    ///
-    /// **This is dangerous to call unless you trust the bytes you are reading; otherwise,
-    /// API invariants may be broken.** Please consider using `from_uncompressed()` instead.
-    pub fn from_uncompressed_unchecked(bytes: &[u8; UNCOMPRESSED_SIZE]) -> CtOption<Self> {
-        G2Affine::from_uncompressed_unchecked(bytes).map(Into::into)
-    }
-
     /// Attempts to deserialize a compressed element.
-    pub fn from_compressed(bytes: &[u8; COMPRESSED_SIZE]) -> CtOption<Self> {
+    fn from_compressed(bytes: &[u8; COMPRESSED_SIZE]) -> CtOption<Self> {
         G2Affine::from_compressed(bytes).map(Into::into)
     }
 
@@ -525,10 +538,12 @@ impl G2Projective {
     ///
     /// **This is dangerous to call unless you trust the bytes you are reading; otherwise,
     /// API invariants may be broken.** Please consider using `from_compressed()` instead.
-    pub fn from_compressed_unchecked(bytes: &[u8; COMPRESSED_SIZE]) -> CtOption<Self> {
+    fn from_compressed_unchecked(bytes: &[u8; COMPRESSED_SIZE]) -> CtOption<Self> {
         G2Affine::from_compressed_unchecked(bytes).map(Into::into)
     }
+}
 
+impl G2Projective {
     /// Adds this point to another point in the affine model.
     pub fn add_mixed(&self, rhs: &G2Affine) -> G2Projective {
         let mut out = blst_p2::default();
@@ -538,31 +553,23 @@ impl G2Projective {
         G2Projective(out)
     }
 
-    /// Returns true if this point is on the curve. This should always return
-    /// true unless an "unchecked" API was used.
-    pub fn is_on_curve(&self) -> Choice {
-        let is_on_curve = unsafe { Choice::from(blst_p2_on_curve(&self.0) as u8) };
-        is_on_curve | self.is_identity()
-    }
-
     fn multiply(&self, scalar: &Scalar) -> G2Projective {
         let mut out = blst_p2::default();
 
         // Sclar is 255 bits wide.
         const NBITS: usize = 255;
 
-        unsafe { blst_p2_mult(&mut out, &self.0, scalar.to_bytes().as_ptr(), NBITS) };
+        unsafe { blst_p2_mult(&mut out, &self.0, scalar.to_bytes_le().as_ptr(), NBITS) };
 
         G2Projective(out)
     }
 
-    pub fn from_raw_unchecked(x: Fp2, y: Fp2, z: Fp2) -> Self {
+    fn from_raw_unchecked(x: Fp2, y: Fp2, z: Fp2) -> Self {
         let raw = blst_p2 {
             x: x.0,
             y: y.0,
             z: z.0,
         };
-
         G2Projective(raw)
     }
 
@@ -612,7 +619,7 @@ impl G2Projective {
         let points = p2_affines::from(points);
 
         let mut scalar_bytes: Vec<u8> = Vec::with_capacity(n * 32);
-        for a in scalars.iter().map(|s| s.to_bytes()) {
+        for a in scalars.iter().map(|s| s.to_bytes_le()) {
             scalar_bytes.extend_from_slice(&a);
         }
 
@@ -784,13 +791,6 @@ impl PairingCurveAffine for G2Affine {
     }
 }
 
-#[cfg(feature = "gpu")]
-impl ec_gpu::GpuName for G2Affine {
-    fn name() -> String {
-        ec_gpu::name!()
-    }
-}
-
 #[derive(Copy, Clone)]
 #[repr(transparent)]
 pub struct G2Uncompressed([u8; UNCOMPRESSED_SIZE]);
@@ -950,22 +950,33 @@ impl PrimeField for Fp2 {
     }
 }
 
-impl WithSmallOrderMulGroup<3> for Fp2 {
-    const ZETA: Self = todo!(); // Fp2::new(Fp::ZETA.mul(Fp::ZETA), Fp::ZERO);
-}
-
+const G2_A: Fp2 = Fp2::ZERO;
 const G2_B: Fp2 = Fp2(blst_fp2 {
     fp: [
         blst_fp {
-            l: [4, 0, 0, 0, 0, 0],
+            // 0x04 in Montgomery form.
+            l: [
+                0xaa27_0000_000c_fff3,
+                0x53cc_0032_fc34_000a,
+                0x478f_e97a_6b0a_807f,
+                0xb1d3_7ebe_e6ba_24d7,
+                0x8ec9_733b_bf78_ab2f,
+                0x09d6_4551_3d83_de7e,
+            ],
         },
+        // 0x04 in Montgomery form.
         blst_fp {
-            l: [4, 0, 0, 0, 0, 0],
+            l: [
+                0xaa27_0000_000c_fff3,
+                0x53cc_0032_fc34_000a,
+                0x478f_e97a_6b0a_807f,
+                0xb1d3_7ebe_e6ba_24d7,
+                0x8ec9_733b_bf78_ab2f,
+                0x09d6_4551_3d83_de7e,
+            ],
         },
     ],
 });
-
-const G2_A: Fp2 = Fp2::ZERO;
 
 impl Default for G2Projective {
     fn default() -> Self {
@@ -979,7 +990,14 @@ impl CurveExt for G2Projective {
     const CURVE_ID: &'static str = "";
 
     fn endo(&self) -> Self {
-        todo!()
+        let x_zeta = self.x() * Fp2::ZETA;
+        let raw = blst_p2 {
+            x: x_zeta.0,
+            y: self.y().0,
+            z: self.z().0,
+        };
+
+        G2Projective(raw)
     }
 
     fn jacobian_coordinates(&self) -> (Self::Base, Self::Base, Self::Base) {
@@ -990,11 +1008,12 @@ impl CurveExt for G2Projective {
     }
 
     fn hash_to_curve<'a>(domain_prefix: &'a str) -> Box<dyn Fn(&[u8]) -> Self + 'a> {
-        todo!()
+        unimplemented!()
     }
 
     fn is_on_curve(&self) -> Choice {
-        self.is_on_curve()
+        let is_on_curve = unsafe { Choice::from(blst_p2_on_curve(&self.0) as u8) };
+        is_on_curve | self.is_identity()
     }
 
     fn a() -> Self::Base {
@@ -1021,109 +1040,29 @@ impl CurveExt for G2Projective {
 
 impl CurveAffine for G2Affine {
     type ScalarExt = Scalar;
-    type Base = Fp;
+    type Base = Fp2;
     type CurveExt = G2Projective;
 
     fn coordinates(&self) -> CtOption<Coordinates<Self>> {
-        todo!()
+        Coordinates::from_xy(self.x(), self.y())
     }
 
     fn from_xy(x: Self::Base, y: Self::Base) -> CtOption<Self> {
-        todo!()
+        let raw = blst_p2_affine { x: x.0, y: y.0 };
+        let p = G2Affine(raw);
+        CtOption::new(p, p.is_on_curve())
     }
 
     fn is_on_curve(&self) -> Choice {
-        todo!()
+        unsafe { Choice::from(blst_p2_affine_on_curve(&self.0) as u8) }
     }
 
     fn a() -> Self::Base {
-        todo!()
+        G2_A
     }
 
     fn b() -> Self::Base {
-        todo!()
-    }
-}
-
-impl SerdeObject for G2Projective {
-    fn from_raw_bytes_unchecked(bytes: &[u8]) -> Self {
-        todo!()
-    }
-
-    fn from_raw_bytes(bytes: &[u8]) -> Option<Self> {
-        todo!()
-    }
-
-    fn to_raw_bytes(&self) -> Vec<u8> {
-        todo!()
-    }
-
-    fn read_raw_unchecked<R: Read>(reader: &mut R) -> Self {
-        todo!()
-    }
-
-    fn read_raw<R: Read>(reader: &mut R) -> std::io::Result<Self> {
-        todo!()
-    }
-
-    fn write_raw<W: Write>(&self, writer: &mut W) -> std::io::Result<()> {
-        if self.is_identity().into() {
-            writer.write_all(&[1])?;
-        } else {
-            writer.write_all(&[0])?;
-        }
-        let raw = self.to_uncompressed();
-        writer.write_all(&raw)?;
-
-        Ok(())
-    }
-}
-
-impl SerdeObject for G2Affine {
-    fn from_raw_bytes_unchecked(bytes: &[u8]) -> Self {
-        todo!()
-    }
-
-    fn from_raw_bytes(bytes: &[u8]) -> Option<Self> {
-        todo!()
-    }
-
-    fn to_raw_bytes(&self) -> Vec<u8> {
-        todo!()
-    }
-
-    fn read_raw_unchecked<R: Read>(reader: &mut R) -> Self {
-        todo!()
-    }
-
-    fn read_raw<R: Read>(reader: &mut R) -> std::io::Result<Self> {
-        let mut buf = [0u8];
-        reader.read_exact(&mut buf)?;
-        let _infinity = buf[0] == 1;
-
-        let mut buf = [0u8; UNCOMPRESSED_SIZE];
-        reader.read_exact(&mut buf)?;
-        let res = Self::from_uncompressed_unchecked(&buf);
-        if res.is_some().into() {
-            Ok(res.unwrap())
-        } else {
-            Err(std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                "not on curve",
-            ))
-        }
-    }
-
-    fn write_raw<W: Write>(&self, writer: &mut W) -> std::io::Result<()> {
-        if self.is_identity().into() {
-            writer.write_all(&[1])?;
-        } else {
-            writer.write_all(&[0])?;
-        }
-        let raw = self.to_uncompressed();
-        writer.write_all(&raw)?;
-
-        Ok(())
+        G2_B
     }
 }
 
@@ -1643,10 +1582,6 @@ mod tests {
             let c = el.to_compressed();
             assert_eq!(G2Projective::from_compressed(&c).unwrap(), el);
             assert_eq!(G2Projective::from_compressed_unchecked(&c).unwrap(), el);
-
-            let u = el.to_uncompressed();
-            assert_eq!(G2Projective::from_uncompressed(&u).unwrap(), el);
-            assert_eq!(G2Projective::from_uncompressed_unchecked(&u).unwrap(), el);
 
             let c = el.to_bytes();
             assert_eq!(G2Projective::from_bytes(&c).unwrap(), el);

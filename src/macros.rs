@@ -159,6 +159,7 @@ macro_rules! encoded_point_delegations {
             }
         }
         impl Eq for $t {}
+        #[allow(clippy::non_canonical_partial_ord_impl)]
         impl PartialOrd for $t {
             fn partial_cmp(&self, other: &$t) -> Option<::core::cmp::Ordering> {
                 PartialOrd::partial_cmp(&self.0[..], &other.0[..])

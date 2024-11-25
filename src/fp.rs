@@ -2,6 +2,7 @@
 //! where `p = 0x1a0111ea397fe69a4b1ba7b6434bacd764774b84f38512bf6730d2a0f6b0f6241eabfffeb153ffffb9feffffffffaaab`
 
 use blst::*;
+use halo2curves::serde::SerdeObject;
 
 use core::{
     cmp, fmt,
@@ -16,14 +17,29 @@ use subtle::{Choice, ConditionallySelectable, ConstantTimeEq, CtOption};
 use crate::fp2::Fp2;
 
 // Little-endian non-Montgomery form.
-#[allow(dead_code)]
-const MODULUS: [u64; 6] = [
+const MODULUS: [u64; NUM_LIMBS] = [
     0xb9fe_ffff_ffff_aaab,
     0x1eab_fffe_b153_ffff,
     0x6730_d2a0_f6b0_f624,
     0x6477_4b84_f385_12bf,
     0x4b1b_a7b6_434b_acd7,
     0x1a01_11ea_397f_e69a,
+];
+
+#[cfg(not(target_pointer_width = "64"))]
+const MODULUS_32: [u32; 2 * NUM_LIMBS] = [
+    0xffff_aaab,
+    0xb9fe_ffff,
+    0xb153_ffff,
+    0x1eab_fffe,
+    0xf6b0_f624,
+    0x6730_d2a0,
+    0xf385_12bf,
+    0x6477_4b84,
+    0x434b_acd7,
+    0x4b1b_a7b6,
+    0x397f_e69a,
+    0x1a01_11ea,
 ];
 
 // Little-endian non-Montgomery form.
@@ -49,18 +65,31 @@ const R: Fp = Fp(blst_fp {
     ],
 });
 
-/// R2 = 2^(384*2) mod p
-#[allow(dead_code)]
-const R2: Fp = Fp(blst_fp {
-    l: [
-        0xf4df_1f34_1c34_1746,
-        0x0a76_e6a6_09d1_04f1,
-        0x8de5_476c_4c95_b6d5,
-        0x67eb_88a9_939d_83c0,
-        0x9a79_3e85_b519_952d,
-        0x1198_8fe5_92ca_e3aa,
-    ],
-});
+// These constant is needed to implement [`FormUniformBytes`].
+// It is left here in case the trait is implemented in the future.
+// /// R2 = 2^(384*2) mod p
+// const R2: Fp = Fp(blst_fp {
+//     l: [
+//         0xf4df_1f34_1c34_1746,
+//         0x0a76_e6a6_09d1_04f1,
+//         0x8de5_476c_4c95_b6d5,
+//         0x67eb_88a9_939d_83c0,
+//         0x9a79_3e85_b519_952d,
+//         0x1198_8fe5_92ca_e3aa,
+//     ],
+// });
+//
+// /// R3 = 2^(384*3) mod p
+// const R3: Fp = Fp(blst_fp {
+//     l: [
+//         0xed48_ac6b_d94c_a1e0,
+//         0x315f_831e_03a7_adf8,
+//         0x9a53_352a_615e_29dd,
+//         0x34c0_4e5e_921e_1761,
+//         0x2512_d435_6572_4728,
+//         0x0aa6_3460_9175_5d4d,
+//     ],
+// });
 
 /// `Fp` values are always in Montgomery form; i.e., Fp(a) = aR mod p, with R = 2^384. `blst_fp.l`
 /// is in little-endian `u64` limbs format.
@@ -502,7 +531,22 @@ fn is_valid_u64(le_bytes: &[u64; 6]) -> bool {
     false
 }
 
+fn u64s_from_bytes(bytes: &[u8; 48]) -> [u64; 6] {
+    [
+        u64::from_le_bytes(bytes[0..8].try_into().unwrap()),
+        u64::from_le_bytes(bytes[8..16].try_into().unwrap()),
+        u64::from_le_bytes(bytes[16..24].try_into().unwrap()),
+        u64::from_le_bytes(bytes[24..32].try_into().unwrap()),
+        u64::from_le_bytes(bytes[32..40].try_into().unwrap()),
+        u64::from_le_bytes(bytes[40..].try_into().unwrap()),
+    ]
+}
+
 const NUM_BITS: u32 = 381;
+// Number of 64-bit limbs.
+const NUM_LIMBS: usize = 6;
+// Size in bytes.
+const SIZE: usize = 48;
 /// The number of bits we should "shave" from a randomly sampled reputation.
 const REPR_SHAVE_BITS: usize = 384 - NUM_BITS as usize;
 
@@ -605,8 +649,16 @@ impl Fp {
 
     /// Constructs an element of `Fp` from a little-endian array of limbs without checking that it
     /// is canonical and without converting it to Montgomery form (i.e. without multiplying by `R`).
-    pub fn from_raw_unchecked(l: [u64; 6]) -> Fp {
+    pub(super) fn from_mont_unchecked(l: [u64; 6]) -> Fp {
         Fp(blst_fp { l })
+    }
+
+    /// `u64s` represent a little-endian non-Montgomery form integer mod p.
+    pub fn from_u64s_le(bytes: &[u64; 6]) -> CtOption<Self> {
+        let is_some = Choice::from(is_valid_u64(bytes) as u8);
+        let mut out = blst_fp::default();
+        unsafe { blst_fp_from_uint64(&mut out, bytes.as_ptr()) };
+        CtOption::new(Fp(out), is_some)
     }
 
     /// Multiplies `self` with `3`, returning the result.
@@ -630,14 +682,6 @@ impl Fp {
         out
     }
 
-    // `u64s` represent a little-endian non-Montgomery form integer mod p.
-    pub fn from_u64s_le(bytes: &[u64; 6]) -> CtOption<Self> {
-        let is_some = Choice::from(is_valid_u64(bytes) as u8);
-        let mut out = blst_fp::default();
-        unsafe { blst_fp_from_uint64(&mut out, bytes.as_ptr()) };
-        CtOption::new(Fp(out), is_some)
-    }
-
     pub fn num_bits(&self) -> u32 {
         let mut ret = 384;
         for i in self.to_bytes_be().iter() {
@@ -651,8 +695,20 @@ impl Fp {
         ret
     }
 
-    pub fn is_quad_res(&self) -> Choice {
-        self.sqrt().is_some()
+    // Returns the Jacobi symbol, where the numerator and denominator
+    // are the element and the characteristic of the field, respectively.
+    // The Jacobi symbol is applicable to odd moduli
+    // while the Legendre symbol is applicable to prime moduli.
+    // They are equivalent for prime moduli.
+    #[inline(always)]
+    fn jacobi(&self) -> i64 {
+        let mut res = [0u64; 6];
+        let bytes = self.to_bytes_le();
+        res.iter_mut().enumerate().for_each(|(i, limb)| {
+            let off = i * 8;
+            *limb = u64::from_le_bytes(bytes[off..off + 8].try_into().unwrap());
+        });
+        halo2curves::ff_ext::jacobi::jacobi::<7>(&res, &MODULUS)
     }
 
     #[inline]
@@ -661,29 +717,6 @@ impl Fp {
     }
 }
 
-#[cfg(feature = "gpu")]
-impl ec_gpu::GpuName for Fp {
-    fn name() -> String {
-        ec_gpu::name!()
-    }
-}
-
-#[cfg(feature = "gpu")]
-impl ec_gpu::GpuField for Fp {
-    fn one() -> Vec<u32> {
-        crate::u64_to_u32(&R.0.l[..])
-    }
-
-    fn r2() -> Vec<u32> {
-        crate::u64_to_u32(&R2.0.l[..])
-    }
-
-    fn modulus() -> Vec<u32> {
-        crate::u64_to_u32(&MODULUS[..])
-    }
-}
-
-///////// MISSING CONSTANTS AND TRAITS ///////////////
 // Wrapper needed, because we don't have Default implemented for [0u8; 48]
 #[derive(Copy, Clone)]
 pub struct FpRepr([u8; 48]);
@@ -724,14 +757,15 @@ impl AsMut<[u8]> for FpRepr {
 // computed with sage math:
 // R.<k>=PolynomialRing(GF(0x1a0111ea397fe69a4b1ba7b6434bacd764774b84f38512bf6730d2a0f6b0f6241eabfffeb153ffffb9feffffffffaaab))
 // L=(k^3-1).roots();L
+// We keep the first root for consistency with ZETA_SCALAR
 pub const ZETA_BASE: Fp = Fp(blst_fp {
     l: [
-        0x30f1361b798a64e8,
-        0xf3b8ddab7ece5a2a,
-        0x16a8ca3ac61577f7,
-        0xc26a2ff874fd029b,
-        0x3636b76660701c6e,
-        0x51ba4ab241b6160,
+        0xcd03_c9e4_8671_f071,
+        0x5dab_2246_1fcd_a5d2,
+        0x5870_42af_d385_1b95,
+        0x8eb6_0ebe_01ba_cb9e,
+        0x03f9_7d6e_83d0_50d2,
+        0x18f0_2065_5463_8741,
     ],
 });
 
@@ -747,10 +781,30 @@ const TWO_INV: Fp = Fp(blst_fp {
     ],
 });
 
-/// Computed using sage, GF(0x1a0111ea397fe69a4b1ba7b6434bacd764774b84f38512bf6730d2a0f6b0f6241eabfffeb153ffffb9feffffffffaaab).primitive_element()
-const MULTIPLICATIVE_GENERATOR: Fp = Fp(blst_fp {
-    l: [0x02, 0x00, 0x00, 0x00, 0x00, 0x00],
+/// GENERATOR = 2.
+/// Montgomery form:
+/// 0x11ebab9dbb81e28c6cf28d7901622c038b256521ed1f9bcb57605e0db0ddbb51b93c0018d6c40005321300000006554f
+
+const GENERATOR: Fp = Fp(blst_fp {
+    l: [
+        0x3213_0000_0006_554f,
+        0xb93c_0018_d6c4_0005,
+        0x5760_5e0d_b0dd_bb51,
+        0x8b25_6521_ed1f_9bcb,
+        0x6cf2_8d79_0162_2c03,
+        0x11eb_ab9d_bb81_e28c,
+    ],
 });
+
+impl halo2curves::ff_ext::Legendre for Fp {
+    #[inline(always)]
+    fn legendre(&self) -> i64 {
+        self.jacobi()
+    }
+}
+impl WithSmallOrderMulGroup<3> for Fp {
+    const ZETA: Self = ZETA_BASE;
+}
 
 impl PrimeField for Fp {
     type Repr = FpRepr;
@@ -764,61 +818,120 @@ impl PrimeField for Fp {
     }
 
     fn is_odd(&self) -> Choice {
-        todo!()
+        Choice::from(self.to_repr()[0] & 1)
     }
 
     const MODULUS: &'static str = "0x1a0111ea397fe69a4b1ba7b6434bacd764774b84f38512bf6730d2a0f6b0f6241eabfffeb153ffffb9feffffffffaaab";
-    const NUM_BITS: u32 = 48;
-    const CAPACITY: u32 = 0;
+    const NUM_BITS: u32 = NUM_BITS;
+    const CAPACITY: u32 = Self::NUM_BITS - 1;
     const TWO_INV: Self = TWO_INV;
-    const MULTIPLICATIVE_GENERATOR: Self = MULTIPLICATIVE_GENERATOR;
+    const MULTIPLICATIVE_GENERATOR: Self = GENERATOR;
     const S: u32 = 0;
-    const ROOT_OF_UNITY: Self = Fp::ZERO;
-    const ROOT_OF_UNITY_INV: Self = Fp::ZERO;
+
+    // These constants are not needed for the base field.
+    const ROOT_OF_UNITY: Self = Fp::ONE;
+    const ROOT_OF_UNITY_INV: Self = Fp::ONE;
     const DELTA: Self = Fp::ZERO;
 }
 
-impl WithSmallOrderMulGroup<3> for Fp {
-    const ZETA: Self = ZETA_BASE;
-}
-
 impl PrimeFieldBits for Fp {
-    type ReprBits = [u64; 6];
+    #[cfg(target_pointer_width = "64")]
+    type ReprBits = [u64; NUM_LIMBS];
+    #[cfg(not(target_pointer_width = "64"))]
+    type ReprBits = [u32; 2 * NUM_LIMBS];
 
     fn to_le_bits(&self) -> ff::FieldBits<Self::ReprBits> {
         let bytes: [u8; 48] = self.to_repr().0;
 
+        #[cfg(target_pointer_width = "64")]
         const STEP: usize = 8;
+        #[cfg(not(target_pointer_width = "64"))]
+        const STEP: usize = 4;
 
-        let limbs = (0..6)
-            .map(|off| u64::from_le_bytes(bytes[off * STEP..(off + 1) * STEP].try_into().unwrap()))
+        let limbs = (0..NUM_LIMBS * 8 / STEP)
+            .map(|off| {
+                #[cfg(target_pointer_width = "64")]
+                let limb =
+                    u64::from_le_bytes(bytes[off * STEP..(off + 1) * STEP].try_into().unwrap());
+                #[cfg(not(target_pointer_width = "64"))]
+                let limb =
+                    u32::from_le_bytes(bytes[off * STEP..(off + 1) * STEP].try_into().unwrap());
+
+                limb
+            })
             .collect::<Vec<_>>();
 
         ff::FieldBits::new(limbs.try_into().unwrap())
     }
 
     fn char_le_bits() -> ff::FieldBits<Self::ReprBits> {
-        // Hardcoded limbs of modulus
-        let hex = |a: &str| u64::from_str_radix(a, 16).unwrap();
-        let modulus_limbs = [
-            hex("0xb9feffffffffaaab"),
-            hex("0x1eabfffeb153ffff"),
-            hex("0x6730d2a0f6b0f624"),
-            hex("0x64774b84f38512bf"),
-            hex("0x4b1ba7b6434bacd7"),
-            hex("0x1a0111ea397fe69a"),
-        ];
-        ff::FieldBits::new(modulus_limbs)
+        #[cfg(target_pointer_width = "64")]
+        let bits = ff::FieldBits::new(MODULUS);
+        #[cfg(not(target_pointer_width = "64"))]
+        let bits = ff::FieldBits::new(MODULUS_32);
+
+        bits
+    }
+}
+
+impl SerdeObject for Fp {
+    // Don't call this method with untrusted input. No checks performed before unsafe block.
+    fn from_raw_bytes_unchecked(bytes: &[u8]) -> Self {
+        debug_assert_eq!(bytes.len(), SIZE);
+        let bytes: [u8; SIZE] = bytes.try_into().unwrap();
+        let inner = u64s_from_bytes(&bytes);
+        Fp(blst_fp { l: inner })
+    }
+
+    fn from_raw_bytes(bytes: &[u8]) -> Option<Self> {
+        if bytes.len() != SIZE {
+            return None;
+        }
+        Some(Self::from_raw_bytes_unchecked(bytes))
+    }
+
+    fn to_raw_bytes(&self) -> Vec<u8> {
+        let mut res = Vec::with_capacity(NUM_LIMBS * 8);
+        for limb in self.0.l.iter() {
+            res.extend_from_slice(&limb.to_le_bytes());
+        }
+        res
+    }
+
+    // Don't call this method with untrusted input. No checks performed before unsafe block.
+    fn read_raw_unchecked<R: std::io::Read>(reader: &mut R) -> Self {
+        let mut bytes = [0u8; SIZE];
+        reader
+            .read_exact(&mut bytes)
+            .unwrap_or_else(|_| panic!("Expected {} bytes.", SIZE));
+        Self::from_raw_bytes_unchecked(&bytes)
+    }
+
+    fn read_raw<R: std::io::Read>(reader: &mut R) -> std::io::Result<Self> {
+        use std::io::{Error, ErrorKind};
+        let mut bytes = [0u8; SIZE];
+        reader
+            .read_exact(&mut bytes)
+            .unwrap_or_else(|_| panic!("Expected {} bytes.", SIZE));
+        let out = Self::from_raw_bytes(&bytes);
+        if let Some(out) = out {
+            Ok(out)
+        } else {
+            Err(Error::new(ErrorKind::InvalidData, "Invalid data."))
+        }
+    }
+
+    fn write_raw<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
+        for limb in self.0.l.iter() {
+            writer.write_all(&limb.to_le_bytes())?;
+        }
+        Ok(())
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    use ff::Field;
-    use rand_core::SeedableRng;
-    use rand_xorshift::XorShiftRng;
 
     #[test]
     fn test_fp_neg_one() {
@@ -1366,7 +1479,7 @@ mod tests {
             }
         }
         // a = 4
-        let a = Fp::from_raw_unchecked([
+        let a = Fp::from_mont_unchecked([
             0xaa27_0000_000c_fff3,
             0x53cc_0032_fc34_000a,
             0x478f_e97a_6b0a_807f,
@@ -1379,7 +1492,7 @@ mod tests {
             // sqrt(4) = -2
             -a.sqrt().unwrap(),
             // 2
-            Fp::from_raw_unchecked([
+            Fp::from_mont_unchecked([
                 0x3213_0000_0006_554f,
                 0xb93c_0018_d6c4_0005,
                 0x5760_5e0d_b0dd_bb51,
@@ -1517,7 +1630,7 @@ mod tests {
 
     #[test]
     fn test_inversion() {
-        let a = Fp::from_raw_unchecked([
+        let a = Fp::from_mont_unchecked([
             0x43b4_3a50_78ac_2076,
             0x1ce0_7630_46f8_962b,
             0x724a_5276_486d_735c,
@@ -1525,7 +1638,7 @@ mod tests {
             0x2095_bd5b_b4ca_9331,
             0x03b3_5b38_94b0_f7da,
         ]);
-        let b = Fp::from_raw_unchecked([
+        let b = Fp::from_mont_unchecked([
             0x69ec_d704_0952_148f,
             0x985c_cc20_2219_0f55,
             0xe19b_ba36_a9ad_2f41,
@@ -1537,4 +1650,13 @@ mod tests {
         assert_eq!(a.invert().unwrap(), b);
         assert!(bool::from(Fp::ZERO.invert().is_none()));
     }
+
+    crate::field_testing_suite!(Fp, "field_arithmetic");
+    crate::field_testing_suite!(Fp, "conversion");
+    crate::field_testing_suite!(Fp, "quadratic_residue");
+    crate::field_testing_suite!(Fp, "bits");
+    crate::field_testing_suite!(Fp, "serdeobject");
+    crate::field_testing_suite!(Fp, "constants");
+    crate::field_testing_suite!(Fp, "sqrt");
+    crate::field_testing_suite!(Fp, "zeta");
 }
