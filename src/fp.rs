@@ -17,14 +17,29 @@ use subtle::{Choice, ConditionallySelectable, ConstantTimeEq, CtOption};
 use crate::fp2::Fp2;
 
 // Little-endian non-Montgomery form.
-#[allow(dead_code)]
-const MODULUS: [u64; 6] = [
+const MODULUS: [u64; NUM_LIMBS] = [
     0xb9fe_ffff_ffff_aaab,
     0x1eab_fffe_b153_ffff,
     0x6730_d2a0_f6b0_f624,
     0x6477_4b84_f385_12bf,
     0x4b1b_a7b6_434b_acd7,
     0x1a01_11ea_397f_e69a,
+];
+
+#[cfg(not(target_pointer_width = "64"))]
+const MODULUS_32: [u32; 2 * NUM_LIMBS] = [
+    0xffff_aaab,
+    0xb9fe_ffff,
+    0xb153_ffff,
+    0x1eab_fffe,
+    0xf6b0_f624,
+    0x6730_d2a0,
+    0xf385_12bf,
+    0x6477_4b84,
+    0x434b_acd7,
+    0x4b1b_a7b6,
+    0x397f_e69a,
+    0x1a01_11ea,
 ];
 
 // Little-endian non-Montgomery form.
@@ -820,32 +835,42 @@ impl PrimeField for Fp {
 }
 
 impl PrimeFieldBits for Fp {
-    type ReprBits = [u64; 6];
+    #[cfg(target_pointer_width = "64")]
+    type ReprBits = [u64; NUM_LIMBS];
+    #[cfg(not(target_pointer_width = "64"))]
+    type ReprBits = [u32; 2 * NUM_LIMBS];
 
     fn to_le_bits(&self) -> ff::FieldBits<Self::ReprBits> {
         let bytes: [u8; 48] = self.to_repr().0;
 
+        #[cfg(target_pointer_width = "64")]
         const STEP: usize = 8;
+        #[cfg(not(target_pointer_width = "64"))]
+        const STEP: usize = 4;
 
-        let limbs = (0..6)
-            .map(|off| u64::from_le_bytes(bytes[off * STEP..(off + 1) * STEP].try_into().unwrap()))
+        let limbs = (0..NUM_LIMBS * 8 / STEP)
+            .map(|off| {
+                #[cfg(target_pointer_width = "64")]
+                let limb =
+                    u64::from_le_bytes(bytes[off * STEP..(off + 1) * STEP].try_into().unwrap());
+                #[cfg(not(target_pointer_width = "64"))]
+                let limb =
+                    u32::from_le_bytes(bytes[off * STEP..(off + 1) * STEP].try_into().unwrap());
+
+                limb
+            })
             .collect::<Vec<_>>();
 
         ff::FieldBits::new(limbs.try_into().unwrap())
     }
 
     fn char_le_bits() -> ff::FieldBits<Self::ReprBits> {
-        // Hardcoded limbs of modulus
-        let hex = |a: &str| u64::from_str_radix(a, 16).unwrap();
-        let modulus_limbs = [
-            hex("0xb9feffffffffaaab"),
-            hex("0x1eabfffeb153ffff"),
-            hex("0x6730d2a0f6b0f624"),
-            hex("0x64774b84f38512bf"),
-            hex("0x4b1ba7b6434bacd7"),
-            hex("0x1a0111ea397fe69a"),
-        ];
-        ff::FieldBits::new(modulus_limbs)
+        #[cfg(target_pointer_width = "64")]
+        let bits = ff::FieldBits::new(MODULUS);
+        #[cfg(not(target_pointer_width = "64"))]
+        let bits = ff::FieldBits::new(MODULUS_32);
+
+        bits
     }
 }
 

@@ -5,7 +5,7 @@ use core::convert::TryInto;
 use core::fmt;
 use core::ops::{Add, Mul, MulAssign, Neg, Sub};
 
-use ff::{Field, FieldBits, PrimeField, PrimeFieldBits};
+use ff::{Field, PrimeField, PrimeFieldBits};
 use rand_core::RngCore;
 use subtle::{Choice, ConditionallySelectable, ConstantTimeEq, CtOption};
 
@@ -73,12 +73,28 @@ impl ConditionallySelectable for Fr {
 
 /// Constant representing the modulus
 /// r = 0x0e7db4ea6533afa906673b0101343b00a6682093ccc81082d0970e5ed6f72cb7
-pub const MODULUS: Fr = Fr([
+pub const MODULUS: Fr = Fr(MODULUS_LIMBS);
+
+const NUM_LIMBS: usize = 4;
+
+const MODULUS_LIMBS: [u64; NUM_LIMBS] = [
     0xd097_0e5e_d6f7_2cb7,
     0xa668_2093_ccc8_1082,
     0x0667_3b01_0134_3b00,
     0x0e7d_b4ea_6533_afa9,
-]);
+];
+
+#[cfg(not(target_pointer_width = "64"))]
+const MODULUS_LIMBS_32: [u32; 2 * NUM_LIMBS] = [
+    0xd6f7_2cb7,
+    0xd097_0e5e,
+    0xccc8_1082,
+    0xa668_2093,
+    0x0134_3b00,
+    0x0667_3b01,
+    0x6533_afa9,
+    0x0e7d_b4ea,
+];
 
 // The number of bits needed to represent the modulus.
 const MODULUS_BITS: u32 = 255;
@@ -755,23 +771,42 @@ impl PartialOrd for Fr {
 }
 
 impl PrimeFieldBits for Fr {
-    type ReprBits = [u64; 4];
+    #[cfg(target_pointer_width = "64")]
+    type ReprBits = [u64; NUM_LIMBS];
+    #[cfg(not(target_pointer_width = "64"))]
+    type ReprBits = [u32; 2 * NUM_LIMBS];
 
-    fn to_le_bits(&self) -> FieldBits<Self::ReprBits> {
-        let bytes = self.to_repr();
+    fn to_le_bits(&self) -> ff::FieldBits<Self::ReprBits> {
+        let bytes: [u8; 32] = self.to_repr();
 
-        let limbs = [
-            u64::from_le_bytes(bytes[0..8].try_into().unwrap()),
-            u64::from_le_bytes(bytes[8..16].try_into().unwrap()),
-            u64::from_le_bytes(bytes[16..24].try_into().unwrap()),
-            u64::from_le_bytes(bytes[24..32].try_into().unwrap()),
-        ];
+        #[cfg(target_pointer_width = "64")]
+        const STEP: usize = 8;
+        #[cfg(not(target_pointer_width = "64"))]
+        const STEP: usize = 4;
 
-        FieldBits::new(limbs)
+        let limbs = (0..NUM_LIMBS * 8 / STEP)
+            .map(|off| {
+                #[cfg(target_pointer_width = "64")]
+                let limb =
+                    u64::from_le_bytes(bytes[off * STEP..(off + 1) * STEP].try_into().unwrap());
+                #[cfg(not(target_pointer_width = "64"))]
+                let limb =
+                    u32::from_le_bytes(bytes[off * STEP..(off + 1) * STEP].try_into().unwrap());
+
+                limb
+            })
+            .collect::<Vec<_>>();
+
+        ff::FieldBits::new(limbs.try_into().unwrap())
     }
 
-    fn char_le_bits() -> FieldBits<Self::ReprBits> {
-        FieldBits::new(MODULUS.0)
+    fn char_le_bits() -> ff::FieldBits<Self::ReprBits> {
+        #[cfg(target_pointer_width = "64")]
+        let bits = ff::FieldBits::new(MODULUS_LIMBS);
+        #[cfg(not(target_pointer_width = "64"))]
+        let bits = ff::FieldBits::new(MODULUS_LIMBS_32);
+
+        bits
     }
 }
 
