@@ -873,8 +873,7 @@ impl SerdeObject for Scalar {
     fn read_raw<R: std::io::Read>(reader: &mut R) -> std::io::Result<Self> {
         let mut bytes = [0u8; SIZE];
         reader
-            .read_exact(&mut bytes)
-            .unwrap_or_else(|_| panic!("Expected {} bytes.", SIZE));
+            .read_exact(&mut bytes)?;
         let out = Self::from_raw_bytes(&bytes);
         use std::io::{Error, ErrorKind};
         if let Some(out) = out {
