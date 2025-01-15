@@ -911,8 +911,7 @@ impl SerdeObject for Fp {
         use std::io::{Error, ErrorKind};
         let mut bytes = [0u8; SIZE];
         reader
-            .read_exact(&mut bytes)
-            .unwrap_or_else(|_| panic!("Expected {} bytes.", SIZE));
+            .read_exact(&mut bytes)?;
         let out = Self::from_raw_bytes(&bytes);
         if let Some(out) = out {
             Ok(out)
