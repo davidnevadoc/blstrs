@@ -127,9 +127,8 @@ fn msm_blst(c: &mut Criterion) {
         for k in MULTICORE_RANGE {
             let n: usize = 1 << k;
             let id = format!("blstrs_{b}b_{k}");
-            let points: Vec<blstrs::G1Projective> = bases.iter().map(Into::into).collect();
             group.bench_function(BenchmarkId::new("Blst", id), |b| {
-                b.iter(|| blstrs::G1Projective::multi_exp(&points[..n], &coeffs[b_index][..n]))
+                b.iter(|| blstrs::G1Affine::multi_exp_unchecked(&bases[..n], &coeffs[b_index][..n]))
             });
         }
     }
