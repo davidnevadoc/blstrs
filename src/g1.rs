@@ -404,6 +404,39 @@ impl G1Affine {
     }
 }
 
+impl G1Affine {
+    /// Perform a multi-exponentiation, aka "multi-scalar-multiplication" (MSM) using `blst`'s
+    /// implementation of Pippenger's algorithm.
+    /// Note: `scalars` is cloned in this method.
+    ///
+    /// No checks are performed on the input points. The caller must ensure they are all valid,
+    /// non-identity curve points.
+    pub fn multi_exp_unchecked(points: &[Self], scalars: &[Scalar]) -> G1Projective {
+        let n = points.len();
+        assert_eq!(n, scalars.len());
+        let points = unsafe {
+            std::slice::from_raw_parts(points.as_ptr() as *const blst_p1_affine, points.len())
+        };
+
+        let mut scalar_bytes: Vec<u8> = Vec::with_capacity(n * 32);
+        for a in scalars.iter().map(|s| s.to_bytes_le()) {
+            scalar_bytes.extend_from_slice(&a);
+        }
+
+        let res = MultiPoint::mult(points, scalar_bytes.as_slice(), 255);
+
+        G1Projective(res)
+    }
+
+    /// Perform a multi-exponentiation, aka "multi-scalar-multiplication" (MSM) using `blst`'s
+    /// implementation of Pippenger's algorithm.
+    /// Note: `scalars` is cloned in this method.
+    pub fn multi_exp(points: &[Self], scalars: &[Scalar]) -> G1Projective {
+        assert!(points.iter().all(|p| (!p.is_identity()).into()));
+        Self::multi_exp_unchecked(points, scalars)
+    }
+}
+
 impl SerdeObject for G1Affine {
     fn from_raw_bytes_unchecked(bytes: &[u8]) -> Self {
         debug_assert_eq!(bytes.len(), UNCOMPRESSED_SIZE);
@@ -606,14 +639,15 @@ impl G1Projective {
         res
     }
 
-    /// Perform a multi-exponentiation, aka "multi-scalar-multiplication" (MSM) using `blst`'s implementation of Pippenger's algorithm.
+    /// Perform a multi-exponentiation, aka "multi-scalar-multiplication" (MSM) using `blst`'s
+    /// implementation of Pippenger's algorithm.
     /// Note: `scalars` is cloned in this method.
-    pub fn multi_exp(points: &[Self], scalars: &[Scalar]) -> Self {
-        let n = if points.len() < scalars.len() {
-            points.len()
-        } else {
-            scalars.len()
-        };
+    ///
+    /// No checks are performed on the input points. The caller must ensure they are all valid,
+    /// non-identity curve points.
+    pub fn multi_exp_unchecked(points: &[Self], scalars: &[Scalar]) -> Self {
+        let n = points.len();
+        assert_eq!(n, scalars.len());
         let points =
             unsafe { std::slice::from_raw_parts(points.as_ptr() as *const blst_p1, points.len()) };
 
@@ -627,6 +661,14 @@ impl G1Projective {
         let res = points.mult(scalar_bytes.as_slice(), 255);
 
         G1Projective(res)
+    }
+
+    /// Perform a multi-exponentiation, aka "multi-scalar-multiplication" (MSM) using `blst`'s
+    /// implementation of Pippenger's algorithm.
+    /// Note: `scalars` is cloned in this method.
+    pub fn multi_exp(points: &[Self], scalars: &[Scalar]) -> Self {
+        assert!(points.iter().all(|p| (!p.is_identity()).into()));
+        Self::multi_exp_unchecked(points, scalars)
     }
 }
 
