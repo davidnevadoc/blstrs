@@ -5,7 +5,7 @@ use core::convert::TryInto;
 use core::fmt;
 use core::ops::{Add, Mul, MulAssign, Neg, Sub};
 
-use ff::{Field, FieldBits, PrimeField, PrimeFieldBits, WithSmallOrderMulGroup};
+use ff::{Field, PrimeField, PrimeFieldBits};
 use rand_core::RngCore;
 use subtle::{Choice, ConditionallySelectable, ConstantTimeEq, CtOption};
 
@@ -73,12 +73,28 @@ impl ConditionallySelectable for Fr {
 
 /// Constant representing the modulus
 /// r = 0x0e7db4ea6533afa906673b0101343b00a6682093ccc81082d0970e5ed6f72cb7
-pub const MODULUS: Fr = Fr([
+pub const MODULUS: Fr = Fr(MODULUS_LIMBS);
+
+const NUM_LIMBS: usize = 4;
+
+const MODULUS_LIMBS: [u64; NUM_LIMBS] = [
     0xd097_0e5e_d6f7_2cb7,
     0xa668_2093_ccc8_1082,
     0x0667_3b01_0134_3b00,
     0x0e7d_b4ea_6533_afa9,
-]);
+];
+
+#[cfg(not(target_pointer_width = "64"))]
+const MODULUS_LIMBS_32: [u32; 2 * NUM_LIMBS] = [
+    0xd6f7_2cb7,
+    0xd097_0e5e,
+    0xccc8_1082,
+    0xa668_2093,
+    0x0134_3b00,
+    0x0667_3b01,
+    0x6533_afa9,
+    0x0e7d_b4ea,
+];
 
 // The number of bits needed to represent the modulus.
 const MODULUS_BITS: u32 = 255;
@@ -145,7 +161,7 @@ impl<'a, 'b> Sub<&'b Fr> for &'a Fr {
 
     #[inline]
     fn sub(self, rhs: &'b Fr) -> Fr {
-        self.sub(rhs)
+        self.sub_ref(rhs)
     }
 }
 
@@ -165,7 +181,7 @@ impl<'a, 'b> Mul<&'b Fr> for &'a Fr {
     fn mul(self, rhs: &'b Fr) -> Fr {
         // Schoolbook multiplication
 
-        self.mul(rhs)
+        self.mul_ref(rhs)
     }
 }
 
@@ -331,7 +347,7 @@ impl Fr {
     /// Converts from an integer represented in little endian
     /// into its (congruent) `Fr` representation.
     pub const fn from_raw(val: [u64; 4]) -> Self {
-        (&Fr(val)).mul(&R2)
+        Fr(val).mul(&R2)
     }
 
     /// Squares this element.
@@ -570,12 +586,12 @@ impl Fr {
         let (r7, _) = adc(r7, carry2, carry);
 
         // Result may be within MODULUS of the correct value
-        (&Fr([r4, r5, r6, r7])).sub(&MODULUS)
+        Fr([r4, r5, r6, r7]).sub(&MODULUS)
     }
 
     /// Multiplies this element by another element
     #[inline]
-    pub const fn mul(&self, rhs: &Self) -> Self {
+    pub const fn mul_ref(&self, rhs: &Self) -> Self {
         // Schoolbook multiplication
 
         let (r0, carry) = mac(0, self.0[0], rhs.0[0], 0);
@@ -601,9 +617,14 @@ impl Fr {
         Fr::montgomery_reduce(r0, r1, r2, r3, r4, r5, r6, r7)
     }
 
+    #[inline]
+    pub const fn mul(self, rhs: &Self) -> Self {
+        self.mul_ref(rhs)
+    }
+
     /// Subtracts another element from this element.
     #[inline]
-    pub const fn sub(&self, rhs: &Self) -> Self {
+    pub const fn sub_ref(&self, rhs: &Self) -> Self {
         let (d0, borrow) = sbb(self.0[0], rhs.0[0], 0);
         let (d1, borrow) = sbb(self.0[1], rhs.0[1], borrow);
         let (d2, borrow) = sbb(self.0[2], rhs.0[2], borrow);
@@ -619,6 +640,11 @@ impl Fr {
         Fr([d0, d1, d2, d3])
     }
 
+    #[inline]
+    pub const fn sub(self, rhs: &Self) -> Self {
+        self.sub_ref(rhs)
+    }
+
     /// Adds this element to another element.
     #[inline]
     pub const fn add(&self, rhs: &Self) -> Self {
@@ -629,7 +655,7 @@ impl Fr {
 
         // Attempt to subtract the modulus, to ensure the value
         // is smaller than the modulus.
-        (&Fr([d0, d1, d2, d3])).sub(&MODULUS)
+        Fr([d0, d1, d2, d3]).sub(&MODULUS)
     }
 
     /// Negates this element.
@@ -744,28 +770,43 @@ impl PartialOrd for Fr {
     }
 }
 
-impl WithSmallOrderMulGroup<3> for Fr {
-    const ZETA: Self = unimplemented!();
-}
-
 impl PrimeFieldBits for Fr {
-    type ReprBits = [u64; 4];
+    #[cfg(target_pointer_width = "64")]
+    type ReprBits = [u64; NUM_LIMBS];
+    #[cfg(not(target_pointer_width = "64"))]
+    type ReprBits = [u32; 2 * NUM_LIMBS];
 
-    fn to_le_bits(&self) -> FieldBits<Self::ReprBits> {
-        let bytes = self.to_repr();
+    fn to_le_bits(&self) -> ff::FieldBits<Self::ReprBits> {
+        let bytes: [u8; 32] = self.to_repr();
 
-        let limbs = [
-            u64::from_le_bytes(bytes[0..8].try_into().unwrap()),
-            u64::from_le_bytes(bytes[8..16].try_into().unwrap()),
-            u64::from_le_bytes(bytes[16..24].try_into().unwrap()),
-            u64::from_le_bytes(bytes[24..32].try_into().unwrap()),
-        ];
+        #[cfg(target_pointer_width = "64")]
+        const STEP: usize = 8;
+        #[cfg(not(target_pointer_width = "64"))]
+        const STEP: usize = 4;
 
-        FieldBits::new(limbs)
+        let limbs = (0..NUM_LIMBS * 8 / STEP)
+            .map(|off| {
+                #[cfg(target_pointer_width = "64")]
+                let limb =
+                    u64::from_le_bytes(bytes[off * STEP..(off + 1) * STEP].try_into().unwrap());
+                #[cfg(not(target_pointer_width = "64"))]
+                let limb =
+                    u32::from_le_bytes(bytes[off * STEP..(off + 1) * STEP].try_into().unwrap());
+
+                limb
+            })
+            .collect::<Vec<_>>();
+
+        ff::FieldBits::new(limbs.try_into().unwrap())
     }
 
-    fn char_le_bits() -> FieldBits<Self::ReprBits> {
-        FieldBits::new(MODULUS.0)
+    fn char_le_bits() -> ff::FieldBits<Self::ReprBits> {
+        #[cfg(target_pointer_width = "64")]
+        let bits = ff::FieldBits::new(MODULUS_LIMBS);
+        #[cfg(not(target_pointer_width = "64"))]
+        let bits = ff::FieldBits::new(MODULUS_LIMBS_32);
+
+        bits
     }
 }
 

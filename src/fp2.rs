@@ -1,6 +1,7 @@
 //! This module implements arithmetic over the quadratic extension field Fp2.
 
 use blst::*;
+use halo2curves::serde::SerdeObject;
 
 use core::{
     cmp::{Ord, Ordering, PartialOrd},
@@ -296,31 +297,22 @@ impl Field for Fp2 {
     }
 }
 
-#[cfg(feature = "gpu")]
-impl ec_gpu::GpuName for Fp2 {
-    fn name() -> String {
-        ec_gpu::name!()
+// Instead of implmenting [`SerdeObject`] for Fp2, we implement just `write_raw`.
+// This is all we need to implement [`SerdeObject`] for [`G2Affine`].
+impl Fp2 {
+    pub fn write_raw<W: std::io::Write>(&self, writer: &mut W) -> std::io::Result<()> {
+        self.c0().write_raw(writer)?;
+        self.c1().write_raw(writer)
     }
 }
 
-// Use `one`, `r2` and `modulus` from the sub-field.
-#[cfg(feature = "gpu")]
-impl ec_gpu::GpuField for Fp2 {
-    fn one() -> Vec<u32> {
-        <Fp as ec_gpu::GpuField>::one()
-    }
+impl ff::WithSmallOrderMulGroup<3> for Fp2 {
+    const ZETA: Self = Fp2::new(Fp::ZETA, Fp::ZERO);
+}
 
-    fn r2() -> Vec<u32> {
-        Fp::r2()
-    }
-
-    fn modulus() -> Vec<u32> {
-        Fp::modulus()
-    }
-
-    fn sub_field_name() -> Option<String> {
-        use ec_gpu::GpuName;
-        Some(Fp::name())
+impl halo2curves::ff_ext::Legendre for Fp2 {
+    fn legendre(&self) -> i64 {
+        self.norm().legendre()
     }
 }
 
@@ -885,7 +877,7 @@ mod tests {
     fn test_fp2_sqrt_2() {
         // a = 1488924004771393321054797166853618474668089414631333405711627789629391903630694737978065425271543178763948256226639*u + 784063022264861764559335808165825052288770346101304131934508881646553551234697082295473567906267937225174620141295
         let a = Fp2::new(
-            Fp::from_raw_unchecked([
+            Fp::from_mont_unchecked([
                 0x2bee_d146_27d7_f9e9,
                 0xb661_4e06_660e_5dce,
                 0x06c4_cc7c_2f91_d42c,
@@ -893,7 +885,7 @@ mod tests {
                 0xebae_bc4c_820d_574e,
                 0x1886_5e12_d93f_d845,
             ]),
-            Fp::from_raw_unchecked([
+            Fp::from_mont_unchecked([
                 0x7d82_8664_baf4_f566,
                 0xd17e_6639_96ec_7339,
                 0x679e_ad55_cb40_78d0,
@@ -908,7 +900,7 @@ mod tests {
         // b = 5, which is a generator of the p - 1 order
         // multiplicative subgroup
         let b = Fp2::new(
-            Fp::from_raw_unchecked([
+            Fp::from_mont_unchecked([
                 0x6631_0000_0010_5545,
                 0x2114_0040_0eec_000d,
                 0x3fa7_af30_c820_e316,
@@ -924,7 +916,7 @@ mod tests {
         // c = 25, which is a generator of the (p - 1) / 2 order
         // multiplicative subgroup
         let c = Fp2::new(
-            Fp::from_raw_unchecked([
+            Fp::from_mont_unchecked([
                 0x44f6_0000_0051_ffae,
                 0x86b8_0141_9948_0043,
                 0xd715_9952_f1f3_794a,
@@ -941,7 +933,7 @@ mod tests {
         // is nonsquare.
         assert!(bool::from(
             Fp2::new(
-                Fp::from_raw_unchecked([
+                Fp::from_mont_unchecked([
                     0xc5fa_1bc8_fd00_d7f6,
                     0x3830_ca45_4606_003b,
                     0x2b28_7f11_04b1_02da,
@@ -949,7 +941,7 @@ mod tests {
                     0x339c_db9e_e953_dbf0,
                     0x0d78_ec51_d989_fc57,
                 ]),
-                Fp::from_raw_unchecked([
+                Fp::from_mont_unchecked([
                     0x27ec_4898_cf87_f613,
                     0x9de1_394e_1abb_05a5,
                     0x0947_f85d_c170_fc14,
