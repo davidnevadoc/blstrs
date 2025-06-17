@@ -72,7 +72,7 @@ fn generate_coefficients<F: PrimeField>(k: u8, bits: usize) -> Vec<F> {
         _ => panic!("unexpected bit size {}", bits),
     };
 
-    let coeffs = (0..n)
+    (0..n)
         .into_par_iter()
         .map_init(
             || {
@@ -97,8 +97,7 @@ fn generate_coefficients<F: PrimeField>(k: u8, bits: usize) -> Vec<F> {
                 }
             },
         )
-        .collect();
-    coeffs
+        .collect()
 }
 
 // Generates bases and coefficients for the given ranges and
