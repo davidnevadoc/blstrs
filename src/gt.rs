@@ -28,6 +28,12 @@ impl fmt::Display for Gt {
     }
 }
 
+impl core::hash::Hash for Gt {
+    fn hash<H: core::hash::Hasher>(&self, state: &mut H) {
+        self.0.hash::<H>(state)
+    }
+}
+
 impl From<Fp12> for Gt {
     fn from(fp12: Fp12) -> Self {
         Gt(fp12)

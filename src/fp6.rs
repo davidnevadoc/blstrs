@@ -43,6 +43,16 @@ impl fmt::Display for Fp6 {
     }
 }
 
+impl core::hash::Hash for Fp6 {
+    fn hash<H: core::hash::Hasher>(&self, state: &mut H) {
+        for i in 0..3 {
+            for j in 0..2 {
+                self.0.fp2[i].fp[j].l.hash::<H>(state);
+            }
+        }
+    }
+}
+
 impl From<Fp> for Fp6 {
     fn from(f: Fp) -> Fp6 {
         Fp6::new(Fp2::from(f), Fp2::ZERO, Fp2::ZERO)

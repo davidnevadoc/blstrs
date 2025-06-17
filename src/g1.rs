@@ -67,6 +67,13 @@ impl fmt::Display for G1Affine {
     }
 }
 
+impl core::hash::Hash for G1Affine {
+    fn hash<H: core::hash::Hasher>(&self, state: &mut H) {
+        self.0.x.l.hash::<H>(state);
+        self.0.y.l.hash::<H>(state)
+    }
+}
+
 impl Default for G1Affine {
     fn default() -> G1Affine {
         G1Affine::identity()

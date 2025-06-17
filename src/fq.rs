@@ -137,6 +137,12 @@ impl fmt::Display for Fq {
     }
 }
 
+impl core::hash::Hash for Fq {
+    fn hash<H: core::hash::Hasher>(&self, state: &mut H) {
+        self.0.l.hash::<H>(state)
+    }
+}
+
 impl Ord for Fq {
     #[allow(clippy::comparison_chain)]
     fn cmp(&self, other: &Fq) -> cmp::Ordering {

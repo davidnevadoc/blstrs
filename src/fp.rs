@@ -368,6 +368,12 @@ impl fmt::Display for Fp {
     }
 }
 
+impl core::hash::Hash for Fp {
+    fn hash<H: core::hash::Hasher>(&self, state: &mut H) {
+        self.0.l.hash::<H>(state)
+    }
+}
+
 impl From<Fp> for blst_fp {
     fn from(val: Fp) -> blst_fp {
         val.0
@@ -910,8 +916,7 @@ impl SerdeObject for Fp {
     fn read_raw<R: std::io::Read>(reader: &mut R) -> std::io::Result<Self> {
         use std::io::{Error, ErrorKind};
         let mut bytes = [0u8; SIZE];
-        reader
-            .read_exact(&mut bytes)?;
+        reader.read_exact(&mut bytes)?;
         let out = Self::from_raw_bytes(&bytes);
         if let Some(out) = out {
             Ok(out)

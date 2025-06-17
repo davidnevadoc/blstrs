@@ -54,6 +54,15 @@ impl fmt::Display for G2Affine {
     }
 }
 
+impl core::hash::Hash for G2Affine {
+    fn hash<H: core::hash::Hasher>(&self, state: &mut H) {
+        self.0.x.fp[0].l.hash::<H>(state);
+        self.0.x.fp[1].l.hash::<H>(state);
+        self.0.y.fp[0].l.hash::<H>(state);
+        self.0.y.fp[1].l.hash::<H>(state)
+    }
+}
+
 impl AsRef<blst_p2_affine> for G2Affine {
     fn as_ref(&self) -> &blst_p2_affine {
         &self.0
