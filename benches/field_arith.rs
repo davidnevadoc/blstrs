@@ -130,7 +130,7 @@ fn bench_bls_base_field(c: &mut Criterion) {
 }
 
 fn bench_bls_scalar_field(c: &mut Criterion) {
-    bench_field_arithmetic::<Scalar>(c, "Scalar field.")
+    bench_field_arithmetic::<Fq>(c, "Scalar field.")
 }
 
 // fn bench_bls_fp2(c: &mut Criterion) {

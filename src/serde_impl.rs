@@ -10,8 +10,8 @@ use serde::{
 };
 
 use crate::{
-    fp::Fp, fp12::Fp12, fp2::Fp2, fp6::Fp6, G1Affine, G1Projective, G2Affine, G2Projective, Gt,
-    MillerLoopResult, Scalar,
+    fp::Fp, fp12::Fp12, fp2::Fp2, fp6::Fp6, Fq, G1Affine, G1Projective, G2Affine, G2Projective, Gt,
+    MillerLoopResult,
 };
 
 const ERR_CODE: &str = "deserialized bytes don't encode a group element";
@@ -109,7 +109,7 @@ fn deserialize_affine<'de, D: Deserializer<'de>, C: PrimeCurveAffine>(d: D) -> R
     d.deserialize_tuple(len, TupleVisitor { _ph: PhantomData })
 }
 
-impl Serialize for Scalar {
+impl Serialize for Fq {
     fn serialize<S: Serializer>(&self, s: S) -> Result<S::Ok, S::Error> {
         let bytes = self.to_bytes_le();
         let u64s = [
@@ -122,10 +122,10 @@ impl Serialize for Scalar {
     }
 }
 
-impl<'de> Deserialize<'de> for Scalar {
+impl<'de> Deserialize<'de> for Fq {
     fn deserialize<D: Deserializer<'de>>(d: D) -> Result<Self, D::Error> {
         let deser = <[u64; 4]>::deserialize(d)?;
-        match Scalar::from_u64s_le(&deser).into() {
+        match Fq::from_u64s_le(&deser).into() {
             Some(scalar) => Ok(scalar),
             None => Err(D::Error::custom(ERR_CODE)),
         }
@@ -354,24 +354,24 @@ mod tests {
             0xbc, 0xe5,
         ]);
         for _ in 0..100 {
-            let f = Scalar::random(&mut rng);
+            let f = Fq::random(&mut rng);
             test_roundtrip(&f);
         }
 
-        let f = Scalar::ZERO;
+        let f = Fq::ZERO;
         test_roundtrip(&f);
         // The hex string "5b302c302c302c305d" encodes the unicode string "[0,0,0,0]" where each
         // byte in the hex string encodes a unicode character: 0x58 = "[", 0x30 = "0", 0x2c = ",",
         // and 0x5d = "]".
         assert_eq!(
-            serde_json::from_slice::<Scalar>(&hex::decode("5b302c302c302c305d").unwrap()).unwrap(),
+            serde_json::from_slice::<Fq>(&hex::decode("5b302c302c302c305d").unwrap()).unwrap(),
             f
         );
 
-        let f = Scalar::ONE;
+        let f = Fq::ONE;
         test_roundtrip(&f);
         assert_eq!(
-            serde_json::from_slice::<Scalar>(&hex::decode("5b312c302c302c305d").unwrap()).unwrap(),
+            serde_json::from_slice::<Fq>(&hex::decode("5b312c302c302c305d").unwrap()).unwrap(),
             f
         );
     }

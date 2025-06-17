@@ -37,8 +37,8 @@ use group::{prime::PrimeGroup, Curve, Group, GroupEncoding};
 use rand_core::RngCore;
 use subtle::{Choice, ConditionallySelectable, ConstantTimeEq, CtOption};
 
+pub use crate::Fq as BlsScalar;
 pub use crate::Fr;
-pub use crate::Scalar as BlsScalar;
 
 use crate::{
     impl_binops_additive, impl_binops_additive_specify_output, impl_binops_multiplicative,

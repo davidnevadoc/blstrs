@@ -21,7 +21,7 @@ use rand_core::RngCore;
 use subtle::{Choice, ConditionallySelectable, ConstantTimeEq, CtOption};
 
 use crate::fp::ZETA_BASE;
-use crate::{fp::Fp, Bls12, Engine, G2Affine, Gt, PairingCurveAffine, Scalar};
+use crate::{fp::Fp, Bls12, Engine, Fq, G2Affine, Gt, PairingCurveAffine};
 
 /// This is an element of $\mathbb{G}_1$ represented in the affine coordinate space.
 /// It is ideal to keep elements in this representation to reduce memory usage and
@@ -236,32 +236,32 @@ impl SubAssign<&G1Affine> for G1Projective {
     }
 }
 
-impl Mul<&Scalar> for &G1Projective {
+impl Mul<&Fq> for &G1Projective {
     type Output = G1Projective;
 
-    fn mul(self, scalar: &Scalar) -> Self::Output {
+    fn mul(self, scalar: &Fq) -> Self::Output {
         self.multiply(scalar)
     }
 }
 
-impl Mul<&Scalar> for &G1Affine {
+impl Mul<&Fq> for &G1Affine {
     type Output = G1Projective;
 
-    fn mul(self, scalar: &Scalar) -> Self::Output {
+    fn mul(self, scalar: &Fq) -> Self::Output {
         G1Projective::from(self).multiply(scalar)
     }
 }
 
-impl MulAssign<&Scalar> for G1Projective {
+impl MulAssign<&Fq> for G1Projective {
     #[inline]
-    fn mul_assign(&mut self, rhs: &Scalar) {
+    fn mul_assign(&mut self, rhs: &Fq) {
         *self = *self * rhs;
     }
 }
 
-impl MulAssign<&Scalar> for G1Affine {
+impl MulAssign<&Fq> for G1Affine {
     #[inline]
-    fn mul_assign(&mut self, rhs: &Scalar) {
+    fn mul_assign(&mut self, rhs: &Fq) {
         *self = (*self * rhs).into();
     }
 }
@@ -273,11 +273,11 @@ impl_add_sub!(G1Affine, G1Projective, G1Projective);
 impl_add_sub_assign!(G1Projective);
 impl_add_sub_assign!(G1Projective, G1Affine);
 
-impl_mul!(G1Projective, Scalar);
-impl_mul!(G1Affine, Scalar, G1Projective);
+impl_mul!(G1Projective, Fq);
+impl_mul!(G1Affine, Fq, G1Projective);
 
-impl_mul_assign!(G1Projective, Scalar);
-impl_mul_assign!(G1Affine, Scalar);
+impl_mul_assign!(G1Projective, Fq);
+impl_mul_assign!(G1Affine, Fq);
 
 impl<T> Sum<T> for G1Projective
 where
@@ -553,7 +553,7 @@ impl G1Projective {
         is_on_curve | self.is_identity()
     }
 
-    fn multiply(&self, scalar: &Scalar) -> G1Projective {
+    fn multiply(&self, scalar: &Fq) -> G1Projective {
         let mut out = blst_p1::default();
 
         // Scalar is 255 bits wide.
@@ -608,7 +608,7 @@ impl G1Projective {
 
     /// Perform a multi-exponentiation, aka "multi-scalar-multiplication" (MSM) using `blst`'s implementation of Pippenger's algorithm.
     /// Note: `scalars` is cloned in this method.
-    pub fn multi_exp(points: &[Self], scalars: &[Scalar]) -> Self {
+    pub fn multi_exp(points: &[Self], scalars: &[Fq]) -> Self {
         let n = if points.len() < scalars.len() {
             points.len()
         } else {
@@ -631,7 +631,7 @@ impl G1Projective {
 }
 
 impl Group for G1Projective {
-    type Scalar = Scalar;
+    type Scalar = Fq;
 
     fn random(mut rng: impl RngCore) -> Self {
         let mut out = blst_p1::default();
@@ -707,7 +707,7 @@ impl PrimeCurve for G1Projective {
 }
 
 impl PrimeCurveAffine for G1Affine {
-    type Scalar = Scalar;
+    type Scalar = Fq;
     type Curve = G1Projective;
 
     fn identity() -> Self {
@@ -879,7 +879,7 @@ impl ConstantTimeEq for G1Projective {
 }
 
 impl CurveExt for G1Projective {
-    type ScalarExt = Scalar;
+    type ScalarExt = Fq;
     type Base = Fp;
     type AffineExt = G1Affine;
     const CURVE_ID: &'static str = "";
@@ -932,7 +932,7 @@ impl CurveExt for G1Projective {
 }
 
 impl CurveAffine for G1Affine {
-    type ScalarExt = Scalar;
+    type ScalarExt = Fq;
     type Base = Fp;
     type CurveExt = G1Projective;
 
@@ -1424,7 +1424,7 @@ mod tests {
     #[test]
     fn test_projective_scalar_multiplication() {
         let g = G1Projective::generator();
-        let a = Scalar(blst::blst_fr {
+        let a = Fq(blst::blst_fr {
             l: [
                 0x2b568297a56da71c,
                 0xd8c39ecb0ef375d1,
@@ -1432,7 +1432,7 @@ mod tests {
                 0x8088a05026b659b2,
             ],
         });
-        let b = Scalar(blst::blst_fr {
+        let b = Fq(blst::blst_fr {
             l: [
                 0x785fdd9b26ef8b85,
                 0xc997f25837695c18,
@@ -1448,7 +1448,7 @@ mod tests {
     #[test]
     fn test_affine_scalar_multiplication() {
         let g = G1Affine::generator();
-        let a = Scalar(blst::blst_fr {
+        let a = Fq(blst::blst_fr {
             l: [
                 0x2b568297a56da71c,
                 0xd8c39ecb0ef375d1,
@@ -1456,7 +1456,7 @@ mod tests {
                 0x8088a05026b659b2,
             ],
         });
-        let b = Scalar(blst::blst_fr {
+        let b = Fq(blst::blst_fr {
             l: [
                 0x785fdd9b26ef8b85,
                 0xc997f25837695c18,
@@ -1532,7 +1532,7 @@ mod tests {
         ]);
 
         let points: Vec<G1Projective> = (0..SIZE).map(|_| G1Projective::random(&mut rng)).collect();
-        let scalars: Vec<Scalar> = (0..SIZE).map(|_| Scalar::random(&mut rng)).collect();
+        let scalars: Vec<Fq> = (0..SIZE).map(|_| Fq::random(&mut rng)).collect();
 
         let mut naive = points[0] * scalars[0];
         for i in 1..SIZE {

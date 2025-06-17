@@ -21,7 +21,7 @@ use pasta_curves::arithmetic::{Coordinates, CurveAffine, CurveExt};
 use rand_core::RngCore;
 use subtle::{Choice, ConditionallySelectable, ConstantTimeEq, CtOption};
 
-use crate::{fp::Fp, fp2::Fp2, Bls12, Engine, G1Affine, Gt, PairingCurveAffine, Scalar};
+use crate::{fp::Fp, fp2::Fp2, Bls12, Engine, Fq, G1Affine, Gt, PairingCurveAffine};
 
 /// This is an element of $\mathbb{G}_2$ represented in the affine coordinate space.
 /// It is ideal to keep elements in this representation to reduce memory usage and
@@ -223,32 +223,32 @@ impl SubAssign<&G2Affine> for G2Projective {
     }
 }
 
-impl Mul<&Scalar> for &G2Projective {
+impl Mul<&Fq> for &G2Projective {
     type Output = G2Projective;
 
-    fn mul(self, scalar: &Scalar) -> Self::Output {
+    fn mul(self, scalar: &Fq) -> Self::Output {
         self.multiply(scalar)
     }
 }
 
-impl Mul<&Scalar> for &G2Affine {
+impl Mul<&Fq> for &G2Affine {
     type Output = G2Projective;
 
-    fn mul(self, scalar: &Scalar) -> Self::Output {
+    fn mul(self, scalar: &Fq) -> Self::Output {
         G2Projective::from(self).multiply(scalar)
     }
 }
 
-impl MulAssign<&Scalar> for G2Projective {
+impl MulAssign<&Fq> for G2Projective {
     #[inline]
-    fn mul_assign(&mut self, rhs: &Scalar) {
+    fn mul_assign(&mut self, rhs: &Fq) {
         *self = *self * rhs;
     }
 }
 
-impl MulAssign<&Scalar> for G2Affine {
+impl MulAssign<&Fq> for G2Affine {
     #[inline]
-    fn mul_assign(&mut self, rhs: &Scalar) {
+    fn mul_assign(&mut self, rhs: &Fq) {
         *self = (*self * rhs).into();
     }
 }
@@ -260,11 +260,11 @@ impl_add_sub!(G2Affine, G2Projective, G2Projective);
 impl_add_sub_assign!(G2Projective);
 impl_add_sub_assign!(G2Projective, G2Affine);
 
-impl_mul!(G2Projective, Scalar);
-impl_mul!(G2Affine, Scalar, G2Projective);
+impl_mul!(G2Projective, Fq);
+impl_mul!(G2Affine, Fq, G2Projective);
 
-impl_mul_assign!(G2Projective, Scalar);
-impl_mul_assign!(G2Affine, Scalar);
+impl_mul_assign!(G2Projective, Fq);
+impl_mul_assign!(G2Affine, Fq);
 
 impl<T> Sum<T> for G2Projective
 where
@@ -279,7 +279,7 @@ where
 }
 
 impl PrimeCurveAffine for G2Affine {
-    type Scalar = Scalar;
+    type Scalar = Fq;
     type Curve = G2Projective;
 
     fn identity() -> Self {
@@ -553,7 +553,7 @@ impl G2Projective {
         G2Projective(out)
     }
 
-    fn multiply(&self, scalar: &Scalar) -> G2Projective {
+    fn multiply(&self, scalar: &Fq) -> G2Projective {
         let mut out = blst_p2::default();
 
         // Sclar is 255 bits wide.
@@ -607,7 +607,7 @@ impl G2Projective {
 
     /// Perform a multi-exponentiation, aka "multi-scalar-multiplication" (MSM) using `blst`'s implementation of Pippenger's algorithm.
     /// Note: `scalars` is cloned in this method.
-    pub fn multi_exp(points: &[Self], scalars: &[Scalar]) -> Self {
+    pub fn multi_exp(points: &[Self], scalars: &[Fq]) -> Self {
         let n = if points.len() < scalars.len() {
             points.len()
         } else {
@@ -630,7 +630,7 @@ impl G2Projective {
 }
 
 impl Group for G2Projective {
-    type Scalar = Scalar;
+    type Scalar = Fq;
 
     fn random(mut rng: impl RngCore) -> Self {
         let mut out = blst_p2::default();
@@ -984,7 +984,7 @@ impl Default for G2Projective {
     }
 }
 impl CurveExt for G2Projective {
-    type ScalarExt = Scalar;
+    type ScalarExt = Fq;
     type Base = Fp2;
     type AffineExt = G2Affine;
     const CURVE_ID: &'static str = "";
@@ -1039,7 +1039,7 @@ impl CurveExt for G2Projective {
 }
 
 impl CurveAffine for G2Affine {
-    type ScalarExt = Scalar;
+    type ScalarExt = Fq;
     type Base = Fp2;
     type CurveExt = G2Projective;
 
@@ -1598,7 +1598,7 @@ mod tests {
         ]);
 
         let points: Vec<G2Projective> = (0..SIZE).map(|_| G2Projective::random(&mut rng)).collect();
-        let scalars: Vec<Scalar> = (0..SIZE).map(|_| Scalar::random(&mut rng)).collect();
+        let scalars: Vec<Fq> = (0..SIZE).map(|_| Fq::random(&mut rng)).collect();
 
         let mut naive = points[0] * scalars[0];
         for i in 1..SIZE {

@@ -11,7 +11,7 @@ use group::Group;
 use rand_core::RngCore;
 use subtle::{Choice, ConstantTimeEq};
 
-use crate::{fp::Fp, fp12::Fp12, fp2::Fp2, fp6::Fp6, Scalar};
+use crate::{fp::Fp, fp12::Fp12, fp2::Fp2, fp6::Fp6, Fq};
 
 /// This is an element of $\mathbb{G}_T$, the target group of the pairing function. As with
 /// $\mathbb{G}_1$ and $\mathbb{G}_2$ this group has order $q$.
@@ -89,11 +89,11 @@ impl Sub<&Gt> for &Gt {
     }
 }
 
-impl Mul<&Scalar> for &Gt {
+impl Mul<&Fq> for &Gt {
     type Output = Gt;
 
     #[allow(clippy::suspicious_arithmetic_impl)]
-    fn mul(self, scalar: &Scalar) -> Self::Output {
+    fn mul(self, scalar: &Fq) -> Self::Output {
         let mut acc = Gt::identity();
 
         // This is a simple double-and-add implementation of group element
@@ -132,17 +132,17 @@ impl SubAssign<&Gt> for Gt {
     }
 }
 
-impl MulAssign<&Scalar> for Gt {
+impl MulAssign<&Fq> for Gt {
     #[inline]
-    fn mul_assign(&mut self, rhs: &Scalar) {
+    fn mul_assign(&mut self, rhs: &Fq) {
         *self = *self * rhs;
     }
 }
 
 impl_add_sub!(Gt);
 impl_add_sub_assign!(Gt);
-impl_mul!(Gt, Scalar);
-impl_mul_assign!(Gt, Scalar);
+impl_mul!(Gt, Fq);
+impl_mul_assign!(Gt, Fq);
 
 impl<T> Sum<T> for Gt
 where
@@ -157,7 +157,7 @@ where
 }
 
 impl Group for Gt {
-    type Scalar = Scalar;
+    type Scalar = Fq;
 
     fn random(mut rng: impl RngCore) -> Self {
         loop {
@@ -334,14 +334,14 @@ mod tests {
 
     #[test]
     fn test_gt_bilinearity() {
-        use crate::Scalar;
+        use crate::Fq;
 
-        let a = Scalar::from_u64s_le(&[1, 2, 3, 4])
+        let a = Fq::from_u64s_le(&[1, 2, 3, 4])
             .unwrap()
             .invert()
             .unwrap()
             .square();
-        let b = Scalar::from_u64s_le(&[5, 6, 7, 8])
+        let b = Fq::from_u64s_le(&[5, 6, 7, 8])
             .unwrap()
             .invert()
             .unwrap()
@@ -385,7 +385,7 @@ mod tests {
 
         let a2 = G1Affine::from(
             G1Affine::generator()
-                * Scalar::from_u64s_le(&[1, 2, 3, 4])
+                * Fq::from_u64s_le(&[1, 2, 3, 4])
                     .unwrap()
                     .invert()
                     .unwrap()
@@ -393,7 +393,7 @@ mod tests {
         );
         let b2 = G2Affine::from(
             G2Affine::generator()
-                * Scalar::from_u64s_le(&[4, 2, 2, 4])
+                * Fq::from_u64s_le(&[4, 2, 2, 4])
                     .unwrap()
                     .invert()
                     .unwrap()
@@ -403,7 +403,7 @@ mod tests {
         let a3 = G1Affine::identity();
         let b3 = G2Affine::from(
             G2Affine::generator()
-                * Scalar::from_u64s_le(&[9, 2, 2, 4])
+                * Fq::from_u64s_le(&[9, 2, 2, 4])
                     .unwrap()
                     .invert()
                     .unwrap()
@@ -412,7 +412,7 @@ mod tests {
 
         let a4 = G1Affine::from(
             G1Affine::generator()
-                * Scalar::from_u64s_le(&[5, 5, 5, 5])
+                * Fq::from_u64s_le(&[5, 5, 5, 5])
                     .unwrap()
                     .invert()
                     .unwrap()
@@ -422,7 +422,7 @@ mod tests {
 
         let a5 = G1Affine::from(
             G1Affine::generator()
-                * Scalar::from_u64s_le(&[323, 32, 3, 1])
+                * Fq::from_u64s_le(&[323, 32, 3, 1])
                     .unwrap()
                     .invert()
                     .unwrap()
@@ -430,7 +430,7 @@ mod tests {
         );
         let b5 = G2Affine::from(
             G2Affine::generator()
-                * Scalar::from_u64s_le(&[4, 2, 2, 9099])
+                * Fq::from_u64s_le(&[4, 2, 2, 9099])
                     .unwrap()
                     .invert()
                     .unwrap()

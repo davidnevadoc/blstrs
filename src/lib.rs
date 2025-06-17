@@ -16,21 +16,21 @@ mod fp;
 mod fp12;
 mod fp2;
 mod fp6;
+mod fq;
 mod g1;
 mod g2;
 mod gt;
 mod pairing;
-mod scalar;
 
 mod jubjub;
 
 pub use fp::Fp;
+pub use fq::Fq;
 pub use g1::{G1Affine, G1Projective, A, B};
 pub use g2::{G2Affine, G2Prepared, G2Projective};
 pub use gt::Gt;
 pub use jubjub::*;
 pub use pairing::*;
-pub use scalar::Scalar;
 
 #[cfg(feature = "serde")]
 mod serde_impl;
@@ -51,7 +51,7 @@ use pairing_lib::{Engine, MultiMillerLoop, PairingCurveAffine};
 pub struct Bls12;
 
 impl Engine for Bls12 {
-    type Fr = Scalar;
+    type Fr = Fq;
     type G1 = G1Projective;
     type G1Affine = G1Affine;
     type G2 = G2Projective;
