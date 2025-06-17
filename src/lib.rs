@@ -10,7 +10,7 @@
 compile_error!("blstrs is only supported on little endian architectures");
 
 #[macro_use]
-mod macros;
+mod arithmetic;
 
 mod fp;
 mod fp12;
@@ -22,10 +22,7 @@ mod gt;
 mod pairing;
 mod scalar;
 
-mod arithmetic;
 mod jubjub;
-#[macro_use]
-pub(crate) mod binops;
 
 pub use fp::Fp;
 pub use g1::{G1Affine, G1Projective, A, B};

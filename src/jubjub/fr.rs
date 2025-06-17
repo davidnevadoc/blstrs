@@ -185,32 +185,10 @@ impl<'a, 'b> Mul<&'b Fr> for &'a Fr {
     }
 }
 
-impl_binops_additive!(Fr, Fr);
-impl_binops_multiplicative!(Fr, Fr);
-
-impl<T> core::iter::Sum<T> for Fr
-where
-    T: core::borrow::Borrow<Fr>,
-{
-    fn sum<I>(iter: I) -> Self
-    where
-        I: Iterator<Item = T>,
-    {
-        iter.fold(Self::zero(), |acc, item| acc + item.borrow())
-    }
-}
-
-impl<T> core::iter::Product<T> for Fr
-where
-    T: core::borrow::Borrow<Fr>,
-{
-    fn product<I>(iter: I) -> Self
-    where
-        I: Iterator<Item = T>,
-    {
-        iter.fold(Self::one(), |acc, item| acc * item.borrow())
-    }
-}
+impl_binops_additive!(Fr);
+impl_binops_multiplicative!(Fr);
+impl_sum!(Fr);
+impl_product!(Fr);
 
 /// INV = -(r^{-1} mod 2^64) mod 2^64
 const INV: u64 = 0x1ba3_a358_ef78_8ef9;
