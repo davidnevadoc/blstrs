@@ -21,7 +21,6 @@ mod g2;
 mod gt;
 mod pairing;
 mod scalar;
-mod traits;
 
 mod arithmetic;
 mod jubjub;
@@ -35,7 +34,6 @@ pub use gt::Gt;
 pub use jubjub::*;
 pub use pairing::*;
 pub use scalar::Scalar;
-pub use traits::Compress;
 
 #[cfg(feature = "serde")]
 mod serde_impl;

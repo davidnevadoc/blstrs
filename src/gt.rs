@@ -11,7 +11,7 @@ use group::Group;
 use rand_core::RngCore;
 use subtle::{Choice, ConstantTimeEq};
 
-use crate::{fp::Fp, fp12::Fp12, fp2::Fp2, fp6::Fp6, traits::Compress, Scalar};
+use crate::{fp::Fp, fp12::Fp12, fp2::Fp2, fp6::Fp6, Scalar};
 
 /// This is an element of $\mathbb{G}_T$, the target group of the pairing function. As with
 /// $\mathbb{G}_1$ and $\mathbb{G}_2$ this group has order $q$.
@@ -306,91 +306,10 @@ impl Group for Gt {
     }
 }
 
-/// Compressed representation of `Fp12`.
-#[derive(Copy, Clone, PartialEq, Eq, Debug)]
-#[repr(transparent)]
-pub struct GtCompressed(pub(crate) Fp6);
-
+#[cfg(test)]
 impl Gt {
-    /// Compress this point. Returns `None` if the element is not in the cyclomtomic subgroup.
-    pub fn compress(&self) -> Option<GtCompressed> {
-        // Use torus-based compression from Section 4.1 in
-        // "On Compressible Pairings and Their Computation" by Naehrig et al.
-        let mut c0 = self.0.c0();
-
-        c0.0.fp2[0] = (c0.c0() + Fp2::from(1)).0;
-        let b = c0 * self.0.c1().invert().unwrap();
-
-        Some(GtCompressed(b))
-    }
-
     fn is_in_subgroup(&self) -> bool {
         unsafe { blst_fp12_in_group(&(self.0).0) }
-    }
-}
-
-impl GtCompressed {
-    /// Uncompress the element, returns `None` if the element is an invalid compression
-    /// format.
-    pub fn uncompress(self) -> Option<Gt> {
-        // Formula for decompression for the odd q case from Section 2 in
-        // "Compression in finite fields and torus-based cryptography" by
-        // Rubin-Silverberg.
-        let fp6_neg_one = Fp6::from(1).neg();
-        let t = Fp12::new(self.0, fp6_neg_one).invert().unwrap();
-        let c = Fp12::new(self.0, Fp6::from(1)) * t;
-        let g = Gt(c);
-
-        if g.is_in_subgroup() {
-            return Some(g);
-        }
-
-        None
-    }
-}
-
-impl Compress for Gt {
-    fn write_compressed<W: std::io::Write>(self, mut out: W) -> std::io::Result<()> {
-        let c = self.compress().unwrap();
-
-        out.write_all(&c.0.c0().c0().to_bytes_le())?;
-        out.write_all(&c.0.c0().c1().to_bytes_le())?;
-
-        out.write_all(&c.0.c1().c0().to_bytes_le())?;
-        out.write_all(&c.0.c1().c1().to_bytes_le())?;
-
-        out.write_all(&c.0.c2().c0().to_bytes_le())?;
-        out.write_all(&c.0.c2().c1().to_bytes_le())?;
-
-        Ok(())
-    }
-
-    fn read_compressed<R: std::io::Read>(mut source: R) -> std::io::Result<Self> {
-        let mut buffer = [0u8; 48];
-        let read_fp = |source: &mut dyn std::io::Read, buffer: &mut [u8; 48]| {
-            source.read_exact(buffer)?;
-            let fp = Fp::from_bytes_le(buffer);
-            Option::from(fp)
-                .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::InvalidData, "invalid fp"))
-        };
-
-        let x0 = read_fp(&mut source, &mut buffer)?;
-        let x1 = read_fp(&mut source, &mut buffer)?;
-
-        let y0 = read_fp(&mut source, &mut buffer)?;
-        let y1 = read_fp(&mut source, &mut buffer)?;
-
-        let z0 = read_fp(&mut source, &mut buffer)?;
-        let z1 = read_fp(&mut source, &mut buffer)?;
-
-        let x = Fp2::new(x0, x1);
-        let y = Fp2::new(y0, y1);
-        let z = Fp2::new(z0, z1);
-
-        let compressed = GtCompressed(Fp6::new(x, y, z));
-        compressed.uncompress().ok_or_else(|| {
-            std::io::Error::new(std::io::ErrorKind::InvalidData, "invalid compression point")
-        })
     }
 }
 
@@ -540,40 +459,6 @@ mod tests {
         .final_exponentiation();
 
         assert_eq!(expected, test);
-    }
-
-    #[test]
-    fn gt_compression() {
-        let mut rng = XorShiftRng::from_seed([
-            0x59, 0x62, 0xbe, 0x5d, 0x76, 0x3d, 0x31, 0x8d, 0x17, 0xdb, 0x37, 0x32, 0x54, 0x06,
-            0xbc, 0xe5,
-        ]);
-
-        for i in 0..100 {
-            let a = Gt::random(&mut rng);
-            // usually not cyclomatic, so not compressable
-            if let Some(b) = a.compress() {
-                let c = b.uncompress().unwrap();
-                assert_eq!(a, c, "{}", i);
-            } else {
-                println!("skipping {}", i);
-            }
-
-            // pairing result, should be compressable
-            let p = G1Projective::random(&mut rng).to_affine();
-            let q = G2Projective::random(&mut rng).to_affine();
-            let a: Gt = crate::pairing(&p, &q);
-            assert!(a.is_in_subgroup());
-
-            let b = a.compress().unwrap();
-            let c = b.uncompress().unwrap();
-            assert_eq!(a, c, "{}", i);
-
-            let mut buffer = Vec::new();
-            a.write_compressed(&mut buffer).unwrap();
-            let out = Gt::read_compressed(std::io::Cursor::new(buffer)).unwrap();
-            assert_eq!(a, out);
-        }
     }
 
     #[test]
